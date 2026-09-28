@@ -11,7 +11,7 @@ The system relies on a hidden **CoreXY** motion mechanism located underneath the
 <p align="center">
   <img src="robot_backgammon_preview.png" width="700" alt="Robotic Backgammon System Overview">
   <br>
-  <em>מבט על מכלול המערכת: מנגנון הנעה CoreXY נסתר מתחת ללוח המשחק</em>
+  <em>System overview: Hidden CoreXY motion mechanism beneath the game board</em>
 </p>
 
 ## 🛠️ Architecture & Technologies
