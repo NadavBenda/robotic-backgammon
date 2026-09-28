@@ -5,6 +5,15 @@ Welcome to the Robotic Backgammon project! This system combines custom mechanics
 ## 🎯 Overview
 The system relies on a hidden **CoreXY** motion mechanism located underneath the game board. The mechanism drives an electromagnet, which smoothly drags game pieces (equipped with an internal iron/magnet sandwich for absolute symmetry) across a 3mm transparent/frosted perspex board. Simultaneously, a camera and an AI vision model track player moves in real-time, allowing the software logic to react and move robotic pieces accordingly.
 
+### 🌐 3D Interactive Model
+[View the 3D model in your browser](https://a360.co/4yloJTi)
+
+<p align="center">
+  <img src="robot_backgammon_preview.png" width="700" alt="Robotic Backgammon System Overview">
+  <br>
+  <em>מבט על מכלול המערכת: מנגנון הנעה CoreXY נסתר מתחת ללוח המשחק</em>
+</p>
+
 ## 🛠️ Architecture & Technologies
 * **Mechanics & Framing:** CoreXY motion system, MGN12H linear rails, and high-strength GT2 timing belts. Custom 3D printed parts (game pieces, brackets, and CoreXY corners) are printed in PLA/PETG. The outer enclosure is built from wood.
 * **Electronics & Actuation:** NEMA 17 stepper motors, silent TMC2209 stepper drivers, a 12V power supply, and a P25/20 electromagnet controlled via an external MOSFET module.
