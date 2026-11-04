@@ -8,8 +8,8 @@ const int MOTOR_B_DIR  = 42;  // Y-DIR
 const int EN_PIN       = 21;  // Enable
 
 // פיני מפסקי גבול
-const int LIMIT_X_PIN  = 15;
-const int LIMIT_Y_PIN  = 16;
+const int LIMIT_X_PIN  = 39;
+const int LIMIT_Y_PIN  = 40;
 
 // כיול תנועה
 const float STEPS_PER_CM  = 400.0; // 400 צעדים לכל 1 ס"מ
