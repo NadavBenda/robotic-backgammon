@@ -10,8 +10,8 @@ const int MOTOR_B_DIR  = 42;  // Y-DIR
 const int EN_PIN       = 21;  // D8 / Enable
 
 // פיני מפסקי גבול (חבר בין הפין ל-GND)
-const int LIMIT_X_PIN  = 15;  // שנה לפי ה-GPIO שבחרת
-const int LIMIT_Y_PIN  = 16;  // שנה לפי ה-GPIO שבחרת
+const int LIMIT_X_PIN  = 39;  // שנה לפי ה-GPIO שבחרת
+const int LIMIT_Y_PIN  = 40;  // שנה לפי ה-GPIO שבחרת
 
 // הגדרות מהירות ומרחק נסיגה (Back-off)
 const int HOMING_DELAY_US = 500;  // מהירות תנועה בטוחה לאיפוס
