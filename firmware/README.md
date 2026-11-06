@@ -16,7 +16,7 @@ Arduino sketches for the ESP32-S3 driving the CoreXY gantry through a CNC Shield
 | Y STEP / DIR | 41 / 42 |
 | Driver EN (active LOW) | 21 |
 | Limit X / Limit Y (NO, to GND, internal pull-up) | 39 / 40 |
-| Electromagnet (AOD4184 PWM) | 14 |
+| Electromagnet (AOD4184 PWM) | 47 |
 
 ## Serial commands (`move_XY_using_serial`, 115200 baud)
 

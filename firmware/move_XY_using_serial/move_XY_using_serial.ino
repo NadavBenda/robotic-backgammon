@@ -12,7 +12,7 @@ const int LIMIT_X_PIN  = 39;
 const int LIMIT_Y_PIN  = 40;
 
 // פין אלקטרומגנט (AOD4184 PWM)
-const int MAG_PIN      = 14;
+const int MAG_PIN      = 47;
 
 // כיול תנועה
 const float STEPS_PER_CM  = 400.0; // 400 צעדים לכל 1 ס"מ
