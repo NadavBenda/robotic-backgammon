@@ -11,6 +11,9 @@ const int EN_PIN       = 21;  // Enable
 const int LIMIT_X_PIN  = 39;
 const int LIMIT_Y_PIN  = 40;
 
+// פין אלקטרומגנט (AOD4184 PWM)
+const int MAG_PIN      = 14;
+
 // כיול תנועה
 const float STEPS_PER_CM  = 400.0; // 400 צעדים לכל 1 ס"מ
 const float MAX_LIMIT_CM  = 49.0;  // גבול עליון למגרש בס"מ
@@ -236,6 +239,12 @@ void parseAndExecute(String cmd) {
   else if (type == 'H' || type == 'h') {
     runHoming();
   }
+  // אלקטרומגנט: M 1 = דולק, M 0 = כבוי
+  else if (type == 'M' || type == 'm') {
+    bool on = cmd.substring(1).toInt() != 0;
+    digitalWrite(MAG_PIN, on ? HIGH : LOW);
+    Serial.println(on ? "Magnet ON" : "Magnet OFF");
+  }
 }
 
 void setup() {
@@ -246,6 +255,8 @@ void setup() {
   pinMode(MOTOR_B_STEP, OUTPUT);
   pinMode(MOTOR_B_DIR, OUTPUT);
   pinMode(EN_PIN, OUTPUT);
+  pinMode(MAG_PIN, OUTPUT);
+  digitalWrite(MAG_PIN, LOW);
 
   pinMode(LIMIT_X_PIN, INPUT_PULLUP);
   pinMode(LIMIT_Y_PIN, INPUT_PULLUP);
@@ -256,7 +267,7 @@ void setup() {
   runHoming();
 
   Serial.println("Ready. Bounds: 0.0 to 49.0 cm.");
-  Serial.println("Commands: G <X> <Y>, R <dX> <dY>, H");
+  Serial.println("Commands: G <X> <Y>, R <dX> <dY>, H, M 1/0");
 }
 
 void loop() {
