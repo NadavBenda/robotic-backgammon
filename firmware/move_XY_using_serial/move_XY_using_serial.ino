@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include "BoardCheck.h"
 #include "Magnet.h"
 
 // פיני מנועים
@@ -260,6 +261,7 @@ void parseAndExecute(String cmd) {
 void setup() {
   mag.begin();  // ראשון: הא"מ כבוי לפני כל דבר אחר
   Serial.begin(115200);
+  boardCheck();
 
   pinMode(MOTOR_A_STEP, OUTPUT);
   pinMode(MOTOR_A_DIR, OUTPUT);

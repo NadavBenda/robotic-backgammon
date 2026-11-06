@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include "BoardCheck.h"
 
 // הגדרת פינים (CNC Shield V3 מול ESP32-S3)
 const int MOTOR_A_STEP = 1;   // X-STEP
@@ -16,6 +17,7 @@ const int STEP_DELAY_US  = 120;    // מהירות גבוהה (היה 900 מיק
 
 void setup() {
   Serial.begin(115200);
+  boardCheck();
   Serial.println("--- CoreXY Large & Fast Circle Started ---");
 
   pinMode(MOTOR_A_STEP, OUTPUT);
