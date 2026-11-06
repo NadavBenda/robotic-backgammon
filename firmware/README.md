@@ -25,4 +25,8 @@ Arduino sketches for the ESP32-S3 driving the CoreXY gantry through a CNC Shield
 - `H`: re-home
 - `M 1` / `M 0`: electromagnet on / off
 
+## Electromagnet safety (`Magnet.h`)
+
+`Magnet` class: pin LOW at boot, a hardware `esp_timer` forces it off after 10 s on (works even while a move blocks `loop()`), and a leaky-bucket heat budget (60 s on, cools at half speed) refuses `on()` when hot. The magnet also turns off on a hard-limit hit.
+
 Calibration: 400 steps/cm, max 120 mm/s, acceleration 600 mm/s².
