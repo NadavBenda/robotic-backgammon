@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include "BoardCheck.h"
 
 // פיני מנועים (CNC Shield V3 מול ESP32-S3)
 const int MOTOR_A_STEP = 1;   // X-STEP
@@ -20,6 +21,7 @@ const long MAX_TRAVEL     = 25000; // הגנת תוכנה מפני תקיעה א
 
 void setup() {
   Serial.begin(115200);
+  boardCheck();
   Serial.println("--- CoreXY Homing Sequence Started ---");
 
   pinMode(MOTOR_A_STEP, OUTPUT);

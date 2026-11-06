@@ -8,6 +8,10 @@ Arduino sketches for the ESP32-S3 driving the CoreXY gantry through a CNC Shield
 | `home_LS/` | Homes Y then X against the limit switches once at boot, with a back-off. |
 | `move_XY_using_serial/` | Homes at boot, then accepts serial commands with a trapezoidal speed profile and soft limits of 0–49 cm. |
 
+## Board settings check (`BoardCheck.h`)
+
+Every sketch folder has a copy of `BoardCheck.h` (Arduino can't include from outside the sketch folder). Wrong Tools settings stop the compile with an `#error` that names the menu and the right value: board, PSRAM = OPI, Flash Mode = QIO, CPU 240 MHz, Partition = 16M Flash (3MB APP/9.9MB FATFS), USB Mode = Hardware CDC. `boardCheck()` at boot also checks flash size (16 MB) and PSRAM (8 MB) and prints a `[BOARD]` line.
+
 ## Pins
 
 | Signal | GPIO |
