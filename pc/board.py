@@ -29,8 +29,9 @@ def find_port():
 
 
 class Board:
-    def __init__(self, port=None, baud=921600, on_event=print):
+    def __init__(self, port=None, baud=921600, on_event=print, on_log=None):
         self.on_event = on_event  # called with "! ..." lines (e.g. MAG_TIMEOUT)
+        self.on_log = on_log      # called with every other line ("# ...", DONE, ERR, ...) if set
         self.ser = serial.Serial()
         self.ser.port = port or find_port()
         self.ser.baudrate = baud
@@ -83,6 +84,8 @@ class Board:
         info = []
         while True:
             reply = self._readline(deadline)
+            if self.on_log and not reply.startswith("!"):
+                self.on_log(reply)
             if reply == "DONE":
                 return info
             if reply.startswith("ERR"):

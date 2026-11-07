@@ -11,6 +11,7 @@
  *   R <dx> <dy>    relative move, mm                       same
  *   M 1 / M 0      electromagnet on / off                  ERR MAG_HOT
  *   C              capture: "IMG <n>" line, then exactly n JPEG bytes, then DONE   ERR CAM
+ *                  (allowed with the magnet on, but warns "! CAPTURE_WITH_MAG_ON")
  *   ?              "POS <x> <y> HOMED <0/1> MAG <0/1> HEAT <%> CAM <0/1>", then DONE
  *
  *   Other lines from the board:
@@ -97,6 +98,7 @@ void stepCartesian(int dirX, int dirY) {
 // מחזיר nullptr בהצלחה, או את סיבת השגיאה
 const char* runHoming() {
   homed = false;
+  Serial.println("# homing Y");
   long n = 0;
   while (digitalRead(LIMIT_Y_PIN) == HIGH) {
     stepCartesian(0, +1);
@@ -106,6 +108,7 @@ const char* runHoming() {
   for (int i = 0; i < BACKOFF_STEPS; i++) stepCartesian(0, -1);
   delay(200);
 
+  Serial.println("# homing X");
   n = 0;
   while (digitalRead(LIMIT_X_PIN) == HIGH) {
     stepCartesian(+1, 0);
@@ -198,7 +201,11 @@ const char* moveToMm(float x, float y) {
   if (x < 0 || x > MAX_MM || y < 0 || y > MAX_MM) return "BOUNDS";
   long tx = lround(x * STEPS_PER_MM);
   long ty = lround(y * STEPS_PER_MM);
-  return moveTrapezoidal(tx - currentXSteps, ty - currentYSteps);
+  uint32_t t0 = millis();
+  const char* err = moveTrapezoidal(tx - currentXSteps, ty - currentYSteps);
+  Serial.printf("# pos %.1f %.1f (%lu ms)\n", currentXSteps / STEPS_PER_MM,
+                currentYSteps / STEPS_PER_MM, (unsigned long)(millis() - t0));
+  return err;
 }
 
 // ---------------------------------------------------------------------------
@@ -237,11 +244,13 @@ bool initCamera() {
 // שולח "IMG <n>" ואחריו n בתים. מחזיר nullptr בהצלחה.
 const char* captureToSerial() {
   if (!camReady) return "CAM";
+  if (mag.isOn()) Serial.println("! CAPTURE_WITH_MAG_ON");
   // זורקים פריים אחד, כדי שהתמונה תצולם אחרי הפקודה ולא לפניה (למשל באמצע תנועה)
   camera_fb_t* fb = esp_camera_fb_get();
   if (fb) esp_camera_fb_return(fb);
   fb = esp_camera_fb_get();
   if (!fb) return "CAM";
+  Serial.printf("# frame %ux%u\n", (unsigned)fb->width, (unsigned)fb->height);
   Serial.printf("IMG %u\n", (unsigned)fb->len);
   const uint8_t* p = fb->buf;
   size_t left = fb->len;
@@ -300,7 +309,9 @@ void execute(String cmd) {
       break;
     case 'M':
       if (cmd.substring(1).toInt() != 0) {
-        reply(mag.on() ? nullptr : "MAG_HOT");
+        bool ok = mag.on();
+        Serial.printf("# magnet heat %d%%\n", mag.heatPercent());
+        reply(ok ? nullptr : "MAG_HOT");
       } else {
         mag.off();
         reply(nullptr);
