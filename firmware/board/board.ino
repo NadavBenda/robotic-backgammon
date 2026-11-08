@@ -20,12 +20,13 @@
  *     ! <event>      async warning, e.g. "! MAG_TIMEOUT"
  *
  * Board: Freenove ESP32-S3 WROOM CAM (N16R8), settings enforced by BoardCheck.h.
- * Pins: X STEP/DIR 1/2, Y STEP/DIR 41/42, EN 21, limits 39/40, magnet 47, camera 4-18.
+ * Pins: X STEP/DIR 1/2, Y STEP/DIR 41/42, EN 21, driver VIO 38, limits 39/40, magnet 47, camera 4-18.
  * GPIO 2 is X DIR here, so the camera test's LED on GPIO 2 is not used.
  */
 
 #include <Arduino.h>
 #include "BoardCheck.h"
+#include "driver/gpio.h"
 #include "Magnet.h"
 #include "esp_camera.h"
 
@@ -37,6 +38,7 @@ const int MOTOR_A_DIR  = 2;   // X-DIR
 const int MOTOR_B_STEP = 41;  // Y-STEP
 const int MOTOR_B_DIR  = 42;  // Y-DIR
 const int EN_PIN       = 21;  // Enable (LOW = פעיל)
+const int VIO_PIN      = 38;  // 3.3V לוגיקה לדרייברים (Shield 5V/VIO), ~1mA
 const int LIMIT_X_PIN  = 39;
 const int LIMIT_Y_PIN  = 40;
 const int MAG_PIN      = 47;
@@ -332,6 +334,12 @@ void execute(String cmd) {
 }
 
 void setup() {
+  // ראשון: מתח לוגיקה לדרייברים לפני STEP/DIR/EN, כדי שלא ידלוף דרך דיודות ההגנה
+  pinMode(VIO_PIN, OUTPUT);
+  gpio_set_drive_capability((gpio_num_t)VIO_PIN, GPIO_DRIVE_CAP_3);
+  digitalWrite(VIO_PIN, HIGH);
+  delay(5);
+
   mag.begin();  // ראשון: הא"מ כבוי לפני כל דבר אחר
   Serial.setRxBufferSize(1024);
   Serial.begin(921600);
