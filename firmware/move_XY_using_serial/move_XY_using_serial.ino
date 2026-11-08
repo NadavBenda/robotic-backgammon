@@ -1,4 +1,6 @@
 #include <Arduino.h>
+#include "BoardCheck.h"
+#include "Magnet.h"
 
 // פיני מנועים
 const int MOTOR_A_STEP = 1;   // X-STEP
@@ -13,6 +15,10 @@ const int LIMIT_Y_PIN  = 40;
 
 // פין אלקטרומגנט (AOD4184 PWM)
 const int MAG_PIN      = 47;
+<<<<<<< HEAD
+=======
+Magnet mag(MAG_PIN);  // מקסימום 10 ש' ברצף, תקציב חום 60 ש'
+>>>>>>> origin/main
 
 // כיול תנועה
 const float STEPS_PER_CM  = 400.0; // 400 צעדים לכל 1 ס"מ
@@ -123,11 +129,13 @@ void moveTrapezoidal(long dX, long dY) {
   for (long i = 0; i < totalSteps; i++) {
     // בדיקת Hard Limit בזמן נסיעה חזרה
     if (dX < 0 && digitalRead(LIMIT_X_PIN) == LOW) {
+      mag.off();
       Serial.println("\n[HARD LIMIT HIT] X switch triggered! Emergency Stop.");
       currentXSteps = 0;
       return;
     }
     if (dY < 0 && digitalRead(LIMIT_Y_PIN) == LOW) {
+      mag.off();
       Serial.println("\n[HARD LIMIT HIT] Y switch triggered! Emergency Stop.");
       currentYSteps = 0;
       return;
@@ -242,21 +250,27 @@ void parseAndExecute(String cmd) {
   // אלקטרומגנט: M 1 = דולק, M 0 = כבוי
   else if (type == 'M' || type == 'm') {
     bool on = cmd.substring(1).toInt() != 0;
-    digitalWrite(MAG_PIN, on ? HIGH : LOW);
-    Serial.println(on ? "Magnet ON" : "Magnet OFF");
+    if (!on) {
+      mag.off();
+      Serial.println("Magnet OFF");
+    } else if (mag.on()) {
+      Serial.println("Magnet ON");
+    } else {
+      Serial.println("Error: magnet too hot, cooling down");
+    }
   }
 }
 
 void setup() {
+  mag.begin();  // ראשון: הא"מ כבוי לפני כל דבר אחר
   Serial.begin(115200);
+  boardCheck();
 
   pinMode(MOTOR_A_STEP, OUTPUT);
   pinMode(MOTOR_A_DIR, OUTPUT);
   pinMode(MOTOR_B_STEP, OUTPUT);
   pinMode(MOTOR_B_DIR, OUTPUT);
   pinMode(EN_PIN, OUTPUT);
-  pinMode(MAG_PIN, OUTPUT);
-  digitalWrite(MAG_PIN, LOW);
 
   pinMode(LIMIT_X_PIN, INPUT_PULLUP);
   pinMode(LIMIT_Y_PIN, INPUT_PULLUP);
@@ -271,6 +285,7 @@ void setup() {
 }
 
 void loop() {
+  mag.update();
   if (Serial.available() > 0) {
     String input = Serial.readStringUntil('\n');
     parseAndExecute(input);
