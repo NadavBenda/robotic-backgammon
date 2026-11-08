@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include "BoardCheck.h"
+#include "driver/gpio.h"
 
 // פיני מנועים (CNC Shield V3 מול ESP32-S3)
 const int MOTOR_A_STEP = 1;   // X-STEP
@@ -9,6 +10,7 @@ const int MOTOR_B_STEP = 41;  // Y-STEP
 const int MOTOR_B_DIR  = 42;  // Y-DIR
 
 const int EN_PIN       = 21;  // D8 / Enable
+const int VIO_PIN      = 38;  // 3.3V לוגיקה לדרייברים (Shield 5V/VIO), ~1mA
 
 // פיני מפסקי גבול (חבר בין הפין ל-GND)
 const int LIMIT_X_PIN  = 39;  // שנה לפי ה-GPIO שבחרת
@@ -20,6 +22,12 @@ const int BACKOFF_STEPS   = 300;  // צעדים להתרחקות מהמתג לא
 const long MAX_TRAVEL     = 25000; // הגנת תוכנה מפני תקיעה אם מפסק לא מגיב
 
 void setup() {
+  // ראשון: מתח לוגיקה לדרייברים לפני STEP/DIR/EN, כדי שלא ידלוף דרך דיודות ההגנה
+  pinMode(VIO_PIN, OUTPUT);
+  gpio_set_drive_capability((gpio_num_t)VIO_PIN, GPIO_DRIVE_CAP_3);
+  digitalWrite(VIO_PIN, HIGH);
+  delay(5);
+
   Serial.begin(115200);
   boardCheck();
   Serial.println("--- CoreXY Homing Sequence Started ---");

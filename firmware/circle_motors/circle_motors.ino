@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include "BoardCheck.h"
+#include "driver/gpio.h"
 
 // הגדרת פינים (CNC Shield V3 מול ESP32-S3)
 const int MOTOR_A_STEP = 1;   // X-STEP
@@ -9,6 +10,7 @@ const int MOTOR_B_STEP = 41;  // Y-STEP
 const int MOTOR_B_DIR  = 42;  // Y-DIR
 
 const int EN_PIN       = 21;  // D8 / Enable
+const int VIO_PIN      = 38;  // 3.3V לוגיקה לדרייברים (Shield 5V/VIO), ~1mA
 
 // פרמטרים מעודכנים: רדיוס פי 3 ומהירות גבוהה בהרבה
 const float RADIUS_STEPS = 4400.0; // רדיוס מוגדל פי 3 (היה 800)
@@ -16,6 +18,12 @@ const int TOTAL_SEGMENTS = 360;    // 360 קטעים לשמירה על עיגו�
 const int STEP_DELAY_US  = 120;    // מהירות גבוהה (היה 900 מיקרו-שניות)
 
 void setup() {
+  // ראשון: מתח לוגיקה לדרייברים לפני STEP/DIR/EN, כדי שלא ידלוף דרך דיודות ההגנה
+  pinMode(VIO_PIN, OUTPUT);
+  gpio_set_drive_capability((gpio_num_t)VIO_PIN, GPIO_DRIVE_CAP_3);
+  digitalWrite(VIO_PIN, HIGH);
+  delay(5);
+
   Serial.begin(115200);
   boardCheck();
   Serial.println("--- CoreXY Large & Fast Circle Started ---");

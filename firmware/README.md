@@ -22,6 +22,7 @@ Every sketch folder has a copy of `BoardCheck.h` (Arduino can't include from out
 | Driver EN (active LOW) | 21 |
 | Limit X / Limit Y (NO, to GND, internal pull-up) | 39 / 40 |
 | Electromagnet (AOD4184 PWM) | 47 |
+| Driver logic power (Shield 5V/VIO, 3.3 V, ~1 mA; set HIGH first in `setup()`) | 38 |
 
 ## Serial commands (`move_XY_using_serial`, 115200 baud)
 

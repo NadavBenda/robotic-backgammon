@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include "BoardCheck.h"
+#include "driver/gpio.h"
 #include "Magnet.h"
 
 // פיני מנועים
@@ -8,6 +9,7 @@ const int MOTOR_A_DIR  = 2;   // X-DIR
 const int MOTOR_B_STEP = 41;  // Y-STEP
 const int MOTOR_B_DIR  = 42;  // Y-DIR
 const int EN_PIN       = 21;  // Enable
+const int VIO_PIN      = 38;  // 3.3V לוגיקה לדרייברים (Shield 5V/VIO), ~1mA
 
 // פיני מפסקי גבול
 const int LIMIT_X_PIN  = 39;
@@ -15,10 +17,7 @@ const int LIMIT_Y_PIN  = 40;
 
 // פין אלקטרומגנט (AOD4184 PWM)
 const int MAG_PIN      = 47;
-<<<<<<< HEAD
-=======
 Magnet mag(MAG_PIN);  // מקסימום 10 ש' ברצף, תקציב חום 60 ש'
->>>>>>> origin/main
 
 // כיול תנועה
 const float STEPS_PER_CM  = 400.0; // 400 צעדים לכל 1 ס"מ
@@ -262,6 +261,12 @@ void parseAndExecute(String cmd) {
 }
 
 void setup() {
+  // ראשון: מתח לוגיקה לדרייברים לפני STEP/DIR/EN, כדי שלא ידלוף דרך דיודות ההגנה
+  pinMode(VIO_PIN, OUTPUT);
+  gpio_set_drive_capability((gpio_num_t)VIO_PIN, GPIO_DRIVE_CAP_3);
+  digitalWrite(VIO_PIN, HIGH);
+  delay(5);
+
   mag.begin();  // ראשון: הא"מ כבוי לפני כל דבר אחר
   Serial.begin(115200);
   boardCheck();
