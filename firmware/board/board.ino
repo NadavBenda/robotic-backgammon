@@ -6,7 +6,7 @@
  *   exactly ONE of:  DONE   or   ERR <reason>
  *   The PC must not send the next command before it gets DONE / ERR.
  *
- *   H              home (Y then X)                         ERR HOME_X / HOME_Y
+ *   H              home (Y then X), then slowly off each switch until it releases   ERR HOME_X / HOME_Y / HOME_X_STUCK / HOME_Y_STUCK
  *   G <x> <y>      absolute move, mm                       ERR NOT_HOMED / BOUNDS / LIMIT_X / LIMIT_Y
  *   R <dx> <dy>    relative move, mm                       same
  *   M 1 / M 0      electromagnet on / off                  ERR MAG_HOT
@@ -65,7 +65,9 @@ const int MAG_PIN      = 47;
 const float STEPS_PER_MM = 40.0;   // 400 צעדים לס"מ
 const float MAX_MM       = 415.0;  // גבול תוכנה 0..415 בשני הצירים (נמדד 9.11: קצה הלוח ב-POS 415 415)
 const int HOMING_DELAY_US = 500;
-const int BACKOFF_STEPS   = 300;
+const int BACKOFF_DELAY_US   = 2000;  // יציאה איטית מהמפסק: כ-6 מ"מ/ש'
+const int BACKOFF_MAX_STEPS  = 2000;  // 50 מ"מ. אם המפסק לא השתחרר עד אז, זו תקלה
+const int BACKOFF_MARGIN     = 8;     // 0.2 מ"מ אחרי השחרור, כדי שלא ירצד על הסף
 const long MAX_TRAVEL     = 25000;
 
 const float START_SPEED_STEPS = 800.0;   // 20 מ"מ/ש'
@@ -82,7 +84,7 @@ bool camReady = false;
 // ---------------------------------------------------------------------------
 // תנועה
 // ---------------------------------------------------------------------------
-void stepCartesian(int dirX, int dirY) {
+void stepCartesian(int dirX, int dirY, int halfDelayUs = HOMING_DELAY_US) {
   long stepA = dirX + dirY;
   long stepB = dirX - dirY;
   digitalWrite(MOTOR_A_DIR, stepA >= 0 ? HIGH : LOW);
@@ -91,10 +93,22 @@ void stepCartesian(int dirX, int dirY) {
   bool pulseB = (stepB != 0);
   if (pulseA) digitalWrite(MOTOR_A_STEP, HIGH);
   if (pulseB) digitalWrite(MOTOR_B_STEP, HIGH);
-  delayMicroseconds(HOMING_DELAY_US);
+  delayMicroseconds(halfDelayUs);
   if (pulseA) digitalWrite(MOTOR_A_STEP, LOW);
   if (pulseB) digitalWrite(MOTOR_B_STEP, LOW);
-  delayMicroseconds(HOMING_DELAY_US);
+  delayMicroseconds(halfDelayUs);
+}
+
+// יוצא לאט מהמפסק עד שהוא משתחרר, ועוד BACKOFF_MARGIN צעדים. מחזיר false אם לא השתחרר.
+bool backOff(int dirX, int dirY, int pin) {
+  int n = 0;
+  while (digitalRead(pin) == LOW) {
+    stepCartesian(dirX, dirY, BACKOFF_DELAY_US);
+    if (++n > BACKOFF_MAX_STEPS) return false;
+  }
+  for (int i = 0; i < BACKOFF_MARGIN; i++) stepCartesian(dirX, dirY, BACKOFF_DELAY_US);
+  Serial.printf("# released after %.2f mm\n", (n + BACKOFF_MARGIN) / STEPS_PER_MM);
+  return true;
 }
 
 // מחזיר nullptr בהצלחה, או את סיבת השגיאה
@@ -107,8 +121,8 @@ const char* runHoming() {
     if (++n > MAX_TRAVEL) return "HOME_Y";
   }
   delay(100);
-  for (int i = 0; i < BACKOFF_STEPS; i++) stepCartesian(0, -1);
-  delay(200);
+  if (!backOff(0, -1, LIMIT_Y_PIN)) return "HOME_Y_STUCK";
+  delay(100);
 
   Serial.println("# homing X");
   n = 0;
@@ -117,8 +131,8 @@ const char* runHoming() {
     if (++n > MAX_TRAVEL) return "HOME_X";
   }
   delay(100);
-  for (int i = 0; i < BACKOFF_STEPS; i++) stepCartesian(-1, 0);
-  delay(200);
+  if (!backOff(-1, 0, LIMIT_X_PIN)) return "HOME_X_STUCK";
+  delay(100);
 
   currentXSteps = 0;
   currentYSteps = 0;
