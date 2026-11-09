@@ -72,7 +72,7 @@ const float START_SPEED_STEPS = 800.0;   // 20 מ"מ/ש'
 const float MAX_SPEED_STEPS   = 4800.0;  // 120 מ"מ/ש'
 const float ACCEL_STEPS       = 24000.0; // 600 מ"מ/ש²
 
-Magnet mag(MAG_PIN);  // מקסימום 10 ש' ברצף, תקציב חום 60 ש'
+Magnet mag(MAG_PIN, 40000);  // מקסימום 40 ש' ברצף, תקציב חום 60 ש'
 
 long currentXSteps = 0;
 long currentYSteps = 0;
