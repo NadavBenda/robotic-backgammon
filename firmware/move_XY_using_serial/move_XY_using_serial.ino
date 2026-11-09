@@ -17,7 +17,7 @@ const int LIMIT_Y_PIN  = 40;
 
 // פין אלקטרומגנט (AOD4184 PWM)
 const int MAG_PIN      = 47;
-Magnet mag(MAG_PIN);  // מקסימום 10 ש' ברצף, תקציב חום 60 ש'
+Magnet mag(MAG_PIN, 40000);  // מקסימום 40 ש' ברצף, תקציב חום 60 ש'
 
 // כיול תנועה
 const float STEPS_PER_CM  = 400.0; // 400 צעדים לכל 1 ס"מ
