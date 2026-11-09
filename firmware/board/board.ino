@@ -63,7 +63,7 @@ const int MAG_PIN      = 47;
 // כיול תנועה
 // ---------------------------------------------------------------------------
 const float STEPS_PER_MM = 40.0;   // 400 צעדים לס"מ
-const float MAX_MM       = 490.0;  // גבול תוכנה 0..490 בשני הצירים
+const float MAX_MM       = 415.0;  // גבול תוכנה 0..415 בשני הצירים (נמדד 9.11: קצה הלוח ב-POS 415 415)
 const int HOMING_DELAY_US = 500;
 const int BACKOFF_STEPS   = 300;
 const long MAX_TRAVEL     = 25000;
