@@ -7,7 +7,7 @@ Arduino sketches for the ESP32-S3 driving the CoreXY gantry through a CNC Shield
 | `circle_motors/` | Motion test: draws a circle repeatedly with CoreXY kinematics (Bresenham step sync). |
 | `home_LS/` | Homes Y then X against the limit switches once at boot, with a back-off. |
 | `board/` | **Main firmware.** Motion + magnet + camera, all over USB serial. Every command ends with `DONE` or `ERR <reason>`; `C` sends a JPEG. Units mm. Protocol at the top of `board.ino`; PC client in `pc/board.py`. |
-| `move_XY_using_serial/` | Homes at boot, then accepts serial commands with a trapezoidal speed profile and soft limits of 0–49 cm. |
+| `move_XY_using_serial/` | Homes at boot, then accepts serial commands with a trapezoidal speed profile and soft limits of 0–41.5 cm. |
 
 ## Board settings check (`BoardCheck.h`)
 
