@@ -21,7 +21,7 @@ Magnet mag(MAG_PIN, 40000);  // מקסימום 40 ש' ברצף, תקציב חו�
 
 // כיול תנועה
 const float STEPS_PER_CM  = 400.0; // 400 צעדים לכל 1 ס"מ
-const float MAX_LIMIT_CM  = 49.0;  // גבול עליון למגרש בס"מ
+const float MAX_LIMIT_CM  = 41.5;  // גבול עליון למגרש בס"מ
 const int HOMING_DELAY_US = 500;
 const int BACKOFF_STEPS   = 300;
 const long MAX_TRAVEL     = 25000;
@@ -205,9 +205,9 @@ void parseAndExecute(String cmd) {
       float targetX = cmd.substring(firstSpace + 1, secondSpace).toFloat();
       float targetY = cmd.substring(secondSpace + 1).toFloat();
 
-      // גבולות עליונים ותחתונים (0 עד 49 ס"מ)
+      // גבולות עליונים ותחתונים (0 עד 41.5 ס"מ)
       if (targetX < 0.0 || targetX > MAX_LIMIT_CM || targetY < 0.0 || targetY > MAX_LIMIT_CM) {
-        Serial.println("Error: Coordinate out of bounds! Range is 0.0 to 49.0 cm.");
+        Serial.println("Error: Coordinate out of bounds! Range is 0.0 to 41.5 cm.");
         return;
       }
 
@@ -234,9 +234,9 @@ void parseAndExecute(String cmd) {
       float newX = (float)(currentXSteps + dX) / STEPS_PER_CM;
       float newY = (float)(currentYSteps + dY) / STEPS_PER_CM;
 
-      // בדיקת חריגה מגבולות 0 עד 49 ס"מ
+      // בדיקת חריגה מגבולות 0 עד 41.5 ס"מ
       if (newX < 0.0 || newX > MAX_LIMIT_CM || newY < 0.0 || newY > MAX_LIMIT_CM) {
-        Serial.println("Error: Relative movement would exceed bounds (0.0 to 49.0 cm)!");
+        Serial.println("Error: Relative movement would exceed bounds (0.0 to 41.5 cm)!");
         return;
       }
 
@@ -285,7 +285,7 @@ void setup() {
 
   runHoming();
 
-  Serial.println("Ready. Bounds: 0.0 to 49.0 cm.");
+  Serial.println("Ready. Bounds: 0.0 to 41.5 cm.");
   Serial.println("Commands: G <X> <Y>, R <dX> <dY>, H, M 1/0");
 }
 
