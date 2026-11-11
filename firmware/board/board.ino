@@ -12,7 +12,9 @@
  *   M 1 / M 0      electromagnet on / off                  ERR MAG_HOT
  *   C              capture: "IMG <n>" line, then exactly n JPEG bytes, then DONE   ERR CAM
  *                  (allowed with the magnet on, but warns "! CAPTURE_WITH_MAG_ON")
- *   ?              "POS <x> <y> HOMED <0/1> MAG <0/1> HEAT <%> CAM <0/1>", then DONE
+ *   P <v> <a>      drag profile used while the magnet is on: top speed mm/s, accel mm/s^2
+ *                  (default 80 / 300; magnet off always uses 120 / 600)        ERR ARGS
+ *   ?              "POS <x> <y> HOMED <0/1> MAG <0/1> HEAT <%> CAM <0/1> DRAG_V <v> DRAG_A <a>", then DONE
  *
  *   Other lines from the board:
  *     READY          once, at boot (the board does NOT home by itself; send H)
@@ -73,6 +75,9 @@ const long MAX_TRAVEL     = 25000;
 const float START_SPEED_STEPS = 800.0;   // 20 מ"מ/ש'
 const float MAX_SPEED_STEPS   = 4800.0;  // 120 מ"מ/ש'
 const float ACCEL_STEPS       = 24000.0; // 600 מ"מ/ש²
+// פרופיל גרירה כשהא"מ דולק: איטי ועדין יותר כדי שהאבן לא תישאר מאחור (משתנה בפקודה P)
+float dragMaxSteps   = 80.0 * STEPS_PER_MM;   // 80 מ"מ/ש'
+float dragAccelSteps = 300.0 * STEPS_PER_MM;  // 300 מ"מ/ש²
 
 Magnet mag(MAG_PIN, 40000);  // מקסימום 40 ש' ברצף, תקציב חום 60 ש'
 
@@ -154,7 +159,10 @@ const char* moveTrapezoidal(long dX, long dY) {
   long totalSteps = max(stepsA, stepsB);
   if (totalSteps == 0) return nullptr;
 
-  long accelSteps = lround(((MAX_SPEED_STEPS * MAX_SPEED_STEPS) - (START_SPEED_STEPS * START_SPEED_STEPS)) / (2.0 * ACCEL_STEPS));
+  // עם אבן על הא"מ: פרופיל הגרירה. בלי: המהיר
+  const float vMax  = mag.isOn() ? dragMaxSteps : MAX_SPEED_STEPS;
+  const float accel = mag.isOn() ? dragAccelSteps : ACCEL_STEPS;
+  long accelSteps = lround(((vMax * vMax) - (START_SPEED_STEPS * START_SPEED_STEPS)) / (2.0 * accel));
   if (accelSteps < 1) accelSteps = 1;
   if (accelSteps * 2 > totalSteps) accelSteps = totalSteps / 2;
   long decelStart = totalSteps - accelSteps;
@@ -180,14 +188,14 @@ const char* moveTrapezoidal(long dX, long dY) {
     }
 
     if (i < accelSteps) {
-      currentSpeed = sqrt((START_SPEED_STEPS * START_SPEED_STEPS) + (2.0 * ACCEL_STEPS * i));
-      if (currentSpeed > MAX_SPEED_STEPS) currentSpeed = MAX_SPEED_STEPS;
+      currentSpeed = sqrt((START_SPEED_STEPS * START_SPEED_STEPS) + (2.0 * accel * i));
+      if (currentSpeed > vMax) currentSpeed = vMax;
     } else if (i >= decelStart) {
       long remaining = totalSteps - i;
-      currentSpeed = sqrt((START_SPEED_STEPS * START_SPEED_STEPS) + (2.0 * ACCEL_STEPS * remaining));
+      currentSpeed = sqrt((START_SPEED_STEPS * START_SPEED_STEPS) + (2.0 * accel * remaining));
       if (currentSpeed < START_SPEED_STEPS) currentSpeed = START_SPEED_STEPS;
     } else {
-      currentSpeed = MAX_SPEED_STEPS;
+      currentSpeed = vMax;
     }
 
     int halfDelayUs = lround((1000000.0 / currentSpeed) / 2.0);
@@ -336,10 +344,17 @@ void execute(String cmd) {
     case 'C':
       reply(captureToSerial());
       break;
+    case 'P':
+      if (!parseTwo(cmd, a, b) || a < 20 || a > 120 || b < 50 || b > 2000) { reply("ARGS"); break; }
+      dragMaxSteps = a * STEPS_PER_MM;
+      dragAccelSteps = b * STEPS_PER_MM;
+      reply(nullptr);
+      break;
     case '?':
-      Serial.printf("POS %.1f %.1f HOMED %d MAG %d HEAT %d CAM %d\n",
+      Serial.printf("POS %.1f %.1f HOMED %d MAG %d HEAT %d CAM %d DRAG_V %d DRAG_A %d\n",
                     currentXSteps / STEPS_PER_MM, currentYSteps / STEPS_PER_MM,
-                    homed, mag.isOn(), mag.heatPercent(), camReady);
+                    homed, mag.isOn(), mag.heatPercent(), camReady,
+                    (int)lround(dragMaxSteps / STEPS_PER_MM), (int)lround(dragAccelSteps / STEPS_PER_MM));
       reply(nullptr);
       break;
     default:

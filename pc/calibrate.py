@@ -6,8 +6,10 @@
 
 How it works: one checker rides on the magnet to each grid point. At every point the magnet
 turns off, a photo is taken and the checker is found in it (dark ring, Hough circles).
-A window shows the guess (green). Enter = accept, click = put the centre there yourself,
-s = skip this point, q = stop.
+A window shows the guess (green): the ellipse is where the round bottom of the checker
+should appear at that spot (from calib.json if there is one, then from the points measured
+so far). Click so the ellipse sits on the bottom of the checker. Enter = accept, s = skip
+this point, q = stop.
 Before each photo the magnet steps aside by --away mm in both axes (towards larger
 coordinates, or smaller near the far edge) so the carriage and rail do not hide the checker.
 After the first two rows the guess uses the points so far, so most of
@@ -23,6 +25,7 @@ import cv2
 import numpy as np
 
 import calib
+import ui
 from board import Board, BoardError
 
 OUT = Path(__file__).parent / "captures" / "calib"
@@ -62,25 +65,49 @@ def predict(px, mm, target, n):
     return p[0] / p[2], p[1] / p[2]
 
 
-def ask(img, guess, label):
-    """Show the photo; return (u, v), 'skip' or 'quit'."""
+def live_maps(px, mm, n):
+    """(to_mm, to_px) from the points measured so far (homography), or None."""
+    if len(px) < n + 2:
+        return None
+    H, _ = cv2.findHomography(np.float32(mm), np.float32(px))
+    if H is None:
+        return None
+    Hi = np.linalg.inv(H)
+    return (lambda u, v: calib._homog(Hi, u, v)), (lambda x, y: calib._homog(H, x, y))
+
+
+def saved_maps():
+    """(to_mm, to_px) from an earlier calib.json, or None."""
+    try:
+        c = calib.load()
+    except (OSError, ValueError, KeyError):
+        return None
+    return c.px_to_mm, c.mm_to_px
+
+
+def ask(img, guess, label, maps=None, keys="Enter=OK  click=fix  s=skip  q=stop"):
+    """Show the photo; return (u, v), 'skip' or 'quit'.
+    maps = (to_mm, to_px): draw the expected outline of the checker bottom at the point."""
     state = {"pt": guess}
+    lines = [label, keys]
+    dy = ui.bar_h(lines)
 
     def on_mouse(ev, x, y, *_):
-        if ev == cv2.EVENT_LBUTTONDOWN:
-            state["pt"] = (float(x), float(y))
+        if ev == cv2.EVENT_LBUTTONDOWN and y >= dy:
+            state["pt"] = (float(x), float(y - dy))
 
-    cv2.namedWindow(WIN, cv2.WINDOW_NORMAL)
+    ui.show(WIN, ui.with_bar(img, lines))
     cv2.setMouseCallback(WIN, on_mouse)
     while True:
-        view = img.copy()
+        view = ui.with_bar(img, lines)
         if state["pt"]:
-            u, v = map(int, state["pt"])
-            cv2.circle(view, (u, v), 14, (0, 255, 0), 2)
-            cv2.drawMarker(view, (u, v), (0, 255, 0), cv2.MARKER_CROSS, 30, 1)
-        cv2.putText(view, label + "   Enter=OK  click=fix  s=skip  q=stop", (10, 25),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-        cv2.imshow(WIN, view)
+            u, v = state["pt"]
+            if maps:
+                ui.draw_bottom(view, *maps, u, v, dy=dy)
+            else:
+                cv2.circle(view, (int(u), int(v) + dy), 14, (0, 255, 0), 2)
+                cv2.drawMarker(view, (int(u), int(v) + dy), (0, 255, 0), cv2.MARKER_CROSS, 30, 1)
+        ui.show(WIN, view)
         k = cv2.waitKey(30) & 0xFF
         if k in (13, 10) and state["pt"]:
             return state["pt"]
@@ -113,6 +140,7 @@ def run(args):
     OUT.mkdir(parents=True, exist_ok=True)
     pts = grid(args.n, args.xmax, args.ymax, args.margin)
     px, mm = [], []
+    old = saved_maps()
     with Board(args.port) as b:
         print("Homing...")
         b.home()
@@ -141,7 +169,8 @@ def run(args):
                     np.hypot(guess[0] - pred[0], guess[1] - pred[1]) < 25:
                 ans = guess
             else:
-                ans = ask(img, guess, f"point {i + 1}/{len(pts)}  ({x:.0f}, {y:.0f}) mm")
+                ans = ask(img, guess, f"point {i + 1}/{len(pts)}  ({x:.0f}, {y:.0f}) mm",
+                          live_maps(px, mm, args.n) or old)
             if ans == "quit":
                 break
             if ans == "skip":
@@ -168,7 +197,8 @@ def test(args):
         while True:
             b.move(*args.park)
             img, _ = photo(b)
-            ans = ask(img, None, "click a checker, Enter = go there, q = quit")
+            ans = ask(img, None, "test: click a checker", (c.px_to_mm, c.mm_to_px),
+                      "Enter=go there  q=quit")
             if ans in ("quit", "skip"):
                 break
             x, y = (float(v) for v in c.px_to_mm(*ans))
@@ -193,5 +223,6 @@ if __name__ == "__main__":
     ap.add_argument("--park", type=lambda t: tuple(map(float, t.split(","))), default=(415, 415),
                     help="test mode: where the magnet waits during the photo, x,y in mm")
     ap.add_argument("--auto", action="store_true", help="accept guesses that match the prediction")
+    ui.keep_open()
     a = ap.parse_args()
     (test if a.mode == "test" else run)(a)
