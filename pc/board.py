@@ -118,13 +118,17 @@ class Board:
     def magnet(self, on):
         self.command("M 1" if on else "M 0", timeout=2)
 
+    def drag_profile(self, speed_mm_s, accel_mm_s2):
+        """Speed and acceleration used while the magnet is on (firmware default 80 / 300)."""
+        self.command(f"P {speed_mm_s:.0f} {accel_mm_s2:.0f}", timeout=2)
+
     def capture(self):
         """One JPEG (XGA 1024x768) as bytes."""
         info = self.command("C", timeout=10)
         return next(x for x in info if isinstance(x, bytes))
 
     def status(self):
-        """{'POS': (x, y), 'HOMED': 1, 'MAG': 0, 'HEAT': 3, 'CAM': 1}"""
+        """{'POS': (x, y), 'HOMED': 1, 'MAG': 0, 'HEAT': 3, 'CAM': 1, 'DRAG_V': 80, 'DRAG_A': 300}"""
         line = next(x for x in self.command("?", timeout=5) if x.startswith("POS"))
         t = line.split()
         out = {"POS": (float(t[1]), float(t[2]))}

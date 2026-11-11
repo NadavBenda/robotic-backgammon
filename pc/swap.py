@@ -5,13 +5,15 @@
     py swap.py --times 6 --auto   # no window when exactly 2 checkers are found
 
 Needs calib.json (py calibrate.py). Before each photo the magnet waits at --park.
-The window shows the checkers found (green, numbered). Enter = swap the two shown
+The window shows the checkers found: green ellipse = where the round bottom of a checker
+there should appear (from calib.json), red = the two that will swap. Enter = swap the two shown
 (or the two you clicked), click = pick a checker (click near one found, or anywhere
 to mark it yourself), r = new photo, q = stop.
 
 The swap goes through a free spot beside the two, so the checkers never touch:
 A -> spot, B -> A, spot -> B. Each new swap starts from a fresh photo, so small
-placement errors do not add up.
+placement errors do not add up. Before letting go the magnet goes --overshoot mm (3)
+past the target, because the checker lags a little behind it.
 """
 import argparse
 import time
@@ -20,6 +22,7 @@ import cv2
 import numpy as np
 
 import calib
+import ui
 from board import Board
 from calibrate import find_circles, magnet_on, photo
 
@@ -43,31 +46,33 @@ def detect(c, img, xmax, ymax):
 def choose(c, img, found):
     """Window: returns two (x_mm, y_mm), 'again' or 'quit'."""
     picked = []
+    maps = (c.px_to_mm, c.mm_to_px)
+    lines = ["", "click 2 checkers  Enter=swap red  r=new photo  q=stop"]
+    dy = ui.bar_h(lines)
 
     def on_mouse(ev, u, v, *_):
-        if ev != cv2.EVENT_LBUTTONDOWN:
+        if ev != cv2.EVENT_LBUTTONDOWN or v < dy:
             return
+        v -= dy
         near = [f for f in found if np.hypot(f[0] - u, f[1] - v) < 25]
         f = min(near, key=lambda f: np.hypot(f[0] - u, f[1] - v)) if near else \
             (u, v, *(float(t) for t in c.px_to_mm(u, v)))
         picked.append(f)
         del picked[:-2]  # keep the last two clicks
 
-    cv2.namedWindow(WIN, cv2.WINDOW_NORMAL)
+    ui.show(WIN, ui.with_bar(img, lines))
     cv2.setMouseCallback(WIN, on_mouse)
     while True:
         pair = picked if len(picked) == 2 else (found if len(found) == 2 else [])
-        view = img.copy()
-        for i, (u, v, x, y) in enumerate(found):
-            cv2.circle(view, (int(u), int(v)), 16, (0, 255, 0), 2)
-            cv2.putText(view, f"{x:.0f},{y:.0f}", (int(u) + 18, int(v)),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 1)
+        lines[0] = f"{len(found)} checkers found" + ("" if pair else ", pick 2")
+        view = ui.with_bar(img, lines)
+        for u, v, x, y in found:
+            ui.draw_bottom(view, *maps, u, v, dy=dy)
+            cv2.putText(view, f"{x:.0f},{y:.0f}", (int(u) + 22, int(v) + dy),
+                        ui.FONT, 0.6, (0, 255, 0), 2, cv2.LINE_AA)
         for u, v, *_ in pair:
-            cv2.circle(view, (int(u), int(v)), 22, (0, 0, 255), 3)
-        msg = f"{len(found)} found. " + ("Enter=swap red  " if pair else "click 2 checkers  ") + \
-              "r=new photo  q=stop"
-        cv2.putText(view, msg, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-        cv2.imshow(WIN, view)
+            ui.draw_bottom(view, *maps, u, v, color=(0, 0, 255), dy=dy, thick=3)
+        ui.show(WIN, view)
         k = cv2.waitKey(30) & 0xFF
         if k in (13, 10) and pair:
             return [(f[2], f[3]) for f in pair]
@@ -107,10 +112,21 @@ def free_spot(a, b, args):
 
 
 def carry(b, frm, to, args):
+    """Drag a checker. --wiggle: a small circle under it first, to catch one that is a bit
+    off-centre. --overshoot: the checker lags behind the magnet, so stop a little past
+    the target before letting go."""
     b.move(*frm)
     magnet_on(b)
     time.sleep(args.grab)
-    b.move(*to)
+    if args.wiggle > 0:
+        for ang in np.radians(np.arange(0, 360, 45)):
+            b.move(frm[0] + args.wiggle * np.cos(ang), frm[1] + args.wiggle * np.sin(ang))
+        b.move(*frm)
+    d = np.subtract(to, frm)
+    dist = float(np.hypot(*d))
+    end = np.asarray(to, float) + (d / dist * args.overshoot if dist > 1 else 0)
+    end = np.clip(end, 0, [args.xmax, args.ymax])
+    b.move(float(end[0]), float(end[1]))
     b.magnet(False)
     time.sleep(0.2)
 
@@ -129,6 +145,8 @@ def main(args):
     done = 0
     with Board(args.port) as b:
         b.home()
+        if args.drag:
+            b.drag_profile(*args.drag)
         while done < args.times:
             b.move(*args.park)
             time.sleep(0.3)
@@ -151,6 +169,7 @@ def main(args):
 
 
 if __name__ == "__main__":
+    ui.keep_open()
     ap = argparse.ArgumentParser()
     ap.add_argument("--port")
     ap.add_argument("--times", type=int, default=1, help="how many swaps")
@@ -160,6 +179,12 @@ if __name__ == "__main__":
     ap.add_argument("--side", type=float, default=40,
                     help="min mm from the middle of A-B to the waiting spot (grows if needed)")
     ap.add_argument("--grab", type=float, default=0.3, help="s to wait after the magnet turns on")
+    ap.add_argument("--drag", type=lambda t: tuple(map(float, t.split(","))),
+                    help="speed,accel while dragging, mm/s and mm/s^2 (firmware default 80,300)")
+    ap.add_argument("--overshoot", type=float, default=3,
+                    help="mm past the target before the magnet lets go (the checker lags)")
+    ap.add_argument("--wiggle", type=float, default=0,
+                    help="mm radius of a small circle under the checker after grabbing (0 = off)")
     ap.add_argument("--xmax", type=float, default=415)
     ap.add_argument("--ymax", type=float, default=420)
     main(ap.parse_args())
