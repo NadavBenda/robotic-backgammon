@@ -4,13 +4,13 @@
     py drag_test.py --speeds 120,150,180,200 --accels 300,600,1000,1500
 
 Click a checker, then click where to drag it (the longer the better, ~300 mm).
-For every speed (120, 250, 400, 600) and acceleration (300, 600, 1200), low to high, the
+For every speed (120, 160, 200, 250) and acceleration (300, 800), low to high, the
 magnet drags the checker once, A->B for the first profile, B->A for the next, and so
 on, so it never has to be put back. After each drag the magnet steps --away mm
 aside (like calibrate.py), takes a photo and you click where the checker really is
 (no automatic detection; s = can't see it, then a photo from the corner). A drag
 passes when it landed within --tol mm (30) of the target. Photos: captures/drag_test/. When an acceleration fails, higher
-accelerations are skipped at that speed and at every faster one (at most 12 runs). If the checker is lost,
+accelerations are skipped at that speed and at every faster one (at most 8 runs). If the checker is lost,
 the window asks you to click where it is now.
 Then click the next checker to test it too, or q to finish. At the end: a table per
 checker, captures/drag_test.csv, and the profile that held for every checker tested,
@@ -171,9 +171,9 @@ if __name__ == "__main__":
     ui.keep_open()
     ap = argparse.ArgumentParser()
     ap.add_argument("--port")
-    ap.add_argument("--speeds", type=floats, default=floats("120,250,400,600"),
+    ap.add_argument("--speeds", type=floats, default=floats("120,160,200,250"),
                     help="mm/s, low to high (max 600)")
-    ap.add_argument("--accels", type=floats, default=floats("300,600,1200"),
+    ap.add_argument("--accels", type=floats, default=floats("300,800"),
                     help="mm/s^2, low to high (max 5000)")
     ap.add_argument("--tol", type=float, default=30, help="mm from the target that still counts as OK")
     ap.add_argument("--overshoot", type=float, default=3)
