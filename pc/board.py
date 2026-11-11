@@ -16,9 +16,6 @@ import serial  # pip install pyserial
 from serial.tools import list_ports
 
 
-PARK_CLOSE = (5, 5)  # mm, where the carriage waits after close()
-
-
 class BoardError(RuntimeError):
     pass
 
@@ -53,11 +50,8 @@ class Board:
         self.close()
 
     def close(self):
-        """Magnet off, then park near 0,0 so the next H is short."""
         try:
             self.command("M 0", timeout=2)
-            if self.status().get("HOMED"):
-                self.move(*PARK_CLOSE)
         except Exception:
             pass
         self.ser.close()
