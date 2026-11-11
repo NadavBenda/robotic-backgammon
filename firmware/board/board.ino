@@ -65,7 +65,8 @@ const int MAG_PIN      = 47;
 // כיול תנועה
 // ---------------------------------------------------------------------------
 const float STEPS_PER_MM = 40.0;   // 400 צעדים לס"מ
-const float MAX_MM       = 415.0;  // גבול תוכנה 0..415 בשני הצירים (נמדד 9.11: קצה הלוח ב-POS 415 415)
+const float MAX_X_MM     = 410.0;  // גבול תוכנה (נמדד 11.11: קצה הלוח ב-x 410)
+const float MAX_Y_MM     = 420.0;  // גבול תוכנה (נמדד 11.11: קצה הלוח ב-y 420)
 const int HOMING_DELAY_US = 500;
 const int BACKOFF_DELAY_US   = 2000;  // יציאה איטית מהמפסק: כ-6 מ"מ/ש'
 const int BACKOFF_MAX_STEPS  = 2000;  // 50 מ"מ. אם המפסק לא השתחרר עד אז, זו תקלה
@@ -222,7 +223,7 @@ const char* moveTrapezoidal(long dX, long dY) {
 
 const char* moveToMm(float x, float y) {
   if (!homed) return "NOT_HOMED";
-  if (x < 0 || x > MAX_MM || y < 0 || y > MAX_MM) return "BOUNDS";
+  if (x < 0 || x > MAX_X_MM || y < 0 || y > MAX_Y_MM) return "BOUNDS";
   long tx = lround(x * STEPS_PER_MM);
   long ty = lround(y * STEPS_PER_MM);
   uint32_t t0 = millis();

@@ -1,7 +1,7 @@
 """The robot calibrates the camera by itself.
 
     py calibrate.py                  # measure a 6x6 grid and write calib.json
-    py calibrate.py --n 5 --xmax 415 --ymax 420
+    py calibrate.py --n 5 --xmax 410 --ymax 420
     py calibrate.py test             # click a spot in the photo -> the magnet goes there
 
 How it works: one checker rides on the magnet to each grid point. At every point the magnet
@@ -215,12 +215,12 @@ if __name__ == "__main__":
     ap.add_argument("mode", nargs="?", default="run", choices=["run", "test"])
     ap.add_argument("--port")
     ap.add_argument("--n", type=int, default=6, help="grid size n x n")
-    ap.add_argument("--xmax", type=float, default=415)
+    ap.add_argument("--xmax", type=float, default=410)
     ap.add_argument("--ymax", type=float, default=420)
     ap.add_argument("--margin", type=float, default=15, help="mm from each edge")
     ap.add_argument("--away", type=float, default=80,
                     help="mm the magnet steps aside in each axis before a photo")
-    ap.add_argument("--park", type=lambda t: tuple(map(float, t.split(","))), default=(415, 415),
+    ap.add_argument("--park", type=lambda t: tuple(map(float, t.split(","))), default=(410, 420),
                     help="test mode: where the magnet waits during the photo, x,y in mm")
     ap.add_argument("--auto", action="store_true", help="accept guesses that match the prediction")
     ui.keep_open()
