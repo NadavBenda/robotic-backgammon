@@ -5,9 +5,10 @@
 
 Click a checker, then click where to drag it (the longer the better, ~300 mm).
 For every speed (120, 250, 400, 600) and acceleration (300, 600, 1200), low to high, the
-magnet drags the checker there and back. After each leg the magnet steps --away mm
+magnet drags the checker once, A->B for the first profile, B->A for the next, and so
+on, so it never has to be put back. After each drag the magnet steps --away mm
 aside (like calibrate.py), takes a photo and you click where the checker really is
-(no automatic detection; s = can't see it, then a photo from the corner). A leg
+(no automatic detection; s = can't see it, then a photo from the corner). A drag
 passes when it landed within --tol mm (30) of the target. Photos: captures/drag_test/. When an acceleration fails, higher
 accelerations are skipped at that speed and at every faster one (at most 12 runs). If the checker is lost,
 the window asks you to click where it is now.
@@ -67,9 +68,10 @@ def test_one(b, c, args, a_pt, b_pt):
     """Run the ladder for one checker. Returns (rows, best row or None)."""
     d = float(np.hypot(b_pt[0] - a_pt[0], b_pt[1] - a_pt[1]))
     print(f"\nA ({a_pt[0]:.0f},{a_pt[1]:.0f}) <-> B ({b_pt[0]:.0f},{b_pt[1]:.0f}), {d:.0f} mm")
-    print(f"{'speed':>6} {'accel':>6} {'A->B err':>9} {'B->A err':>9}  result")
+    print(f"{'speed':>6} {'accel':>6}   leg   {'error':>6}  result")
     rows = []
     pos = a_pt  # where the checker is now (measured)
+    target, leg = b_pt, "A->B"  # one drag per profile, direction alternates
     stop = False
     failed_at = None  # lowest accel that failed at a slower speed: no need to try it faster
     for v in args.speeds:
@@ -77,34 +79,30 @@ def test_one(b, c, args, a_pt, b_pt):
             if failed_at is not None and acc >= failed_at:
                 break
             b.drag_profile(v, acc)
-            errs = []
-            for target in (b_pt, a_pt):
-                carry(b, pos, target, args)
-                leg = "A->B" if target == b_pt else "B->A"
-                seen, img = where(b, c, args, target, f"{v:.0f} mm/s, {acc:.0f} mm/s2, {leg}: where is it now?")
-                if seen == "quit":
+            carry(b, pos, target, args)
+            seen, img = where(b, c, args, target, f"{v:.0f} mm/s, {acc:.0f} mm/s2, {leg}: where is it now?")
+            err = None
+            if seen == "quit":
+                stop = True
+                break
+            if seen is None:  # not visible from beside it: look from the corner
+                b.move(*args.park)
+                img, _ = photo(b)
+                seen = click_mm(c, img, f"lost at {v:.0f} mm/s, {acc:.0f} mm/s2: where is it?")
+                if seen is None:
                     stop = True
-                    break
-                if seen is None:  # not visible from beside it: look from the corner
-                    errs.append(None)
-                    b.move(*args.park)
-                    img, _ = photo(b)
-                    seen = click_mm(c, img, f"lost at {v:.0f} mm/s, {acc:.0f} mm/s2: where is it?")
-                    if seen is None:
-                        stop = True
-                    pos = seen
-                    break
-                errs.append(float(np.hypot(seen[0] - target[0], seen[1] - target[1])))
-                pos = seen
-            ok = len(errs) == 2 and all(e is not None and e <= args.tol for e in errs)
-            cells = [f"{e:9.1f}" if e is not None else "     lost" for e in errs]
-            cells += ["        -"] * (2 - len(cells))
-            print(f"{v:6.0f} {acc:6.0f} {cells[0]} {cells[1]}  {'OK' if ok else 'FAIL'}")
+            else:
+                err = float(np.hypot(seen[0] - target[0], seen[1] - target[1]))
+            ok = err is not None and err <= args.tol
+            print(f"{v:6.0f} {acc:6.0f}  {leg}  " + (f"{err:6.1f}" if err is not None else "  lost")
+                  + f"  {'OK' if ok else 'FAIL'}")
             rows.append({"from": f"{a_pt[0]:.0f},{a_pt[1]:.0f}", "to": f"{b_pt[0]:.0f},{b_pt[1]:.0f}",
-                         "speed": v, "accel": acc, "err_ab": errs[0] if errs else None,
-                         "err_ba": errs[1] if len(errs) > 1 else None, "ok": ok})
+                         "speed": v, "accel": acc, "leg": leg, "err": err, "ok": ok})
             if stop:
                 break
+            pos = seen
+            # next drag goes back the other way, from wherever it really is
+            target, leg = (a_pt, "B->A") if target == b_pt else (b_pt, "A->B")
             if not ok:  # a higher accel at this speed, or at a faster one, will not hold
                 failed_at = acc
                 break
@@ -155,7 +153,7 @@ def main(args):
     if rows:
         OUT.mkdir(exist_ok=True)
         with open(OUT / "drag_test.csv", "w", newline="") as f:
-            w = csv.DictWriter(f, ["from", "to", "speed", "accel", "err_ab", "err_ba", "ok"])
+            w = csv.DictWriter(f, ["from", "to", "speed", "accel", "leg", "err", "ok"])
             w.writeheader()
             w.writerows(rows)
 
