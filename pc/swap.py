@@ -180,7 +180,7 @@ if __name__ == "__main__":
                     help="min mm from the middle of A-B to the waiting spot (grows if needed)")
     ap.add_argument("--grab", type=float, default=0.3, help="s to wait after the magnet turns on")
     ap.add_argument("--drag", type=lambda t: tuple(map(float, t.split(","))),
-                    help="speed,accel while dragging, mm/s and mm/s^2 (firmware default 80,300)")
+                    help="speed,accel while dragging, mm/s and mm/s^2 (firmware default 120,300)")
     ap.add_argument("--overshoot", type=float, default=3,
                     help="mm past the target before the magnet lets go (the checker lags)")
     ap.add_argument("--wiggle", type=float, default=0,
