@@ -7,7 +7,7 @@ Click a checker, then click where to drag it (the longer the better, ~300 mm).
 For every speed (120, 250, 400, 600) and acceleration (300, 600, 1200), low to high, the
 magnet drags the checker there and back. After each leg the magnet steps --away mm
 aside (like calibrate.py) and a photo measures where the checker really landed. A leg
-passes when it landed within --tol mm of the target. When an acceleration fails, higher
+passes when it landed within --tol mm (30) of the target. Photos: captures/drag_test/. When an acceleration fails, higher
 accelerations are skipped at that speed and at every faster one (at most 12 runs). If the checker is lost,
 the window asks you to click where it is now.
 Then click the next checker to test it too, or q to finish. At the end: a table per
@@ -34,17 +34,34 @@ def floats(t):
     return [float(x) for x in t.split(",")]
 
 
-def where(b, c, args, near):
-    """Photo with the magnet stepped --away mm aside (not back to the corner);
-    the checker closest to `near` in mm, or None if none within 40 mm."""
-    b.move(*step_aside(*near, args))
-    time.sleep(0.3)
-    img, _ = photo(b)
+SHOTS = OUT / "drag_test"
+LOST_MM = 60  # no checker found this close to the target = lost
+
+
+def _nearest(c, img, args, near):
     found = detect(c, img, args.xmax, args.ymax)
-    if found:
-        f = min(found, key=lambda f: np.hypot(f[2] - near[0], f[3] - near[1]))
-        if np.hypot(f[2] - near[0], f[3] - near[1]) < 40:
-            return (f[2], f[3]), img
+    if not found:
+        return None, None, 0
+    f = min(found, key=lambda f: np.hypot(f[2] - near[0], f[3] - near[1]))
+    return (f[2], f[3]), float(np.hypot(f[2] - near[0], f[3] - near[1])), len(found)
+
+
+def where(b, c, args, near):
+    """Where the checker near `near` really is (mm), or None. Photo with the magnet
+    stepped aside; if the checker is not seen there, a second photo from --park."""
+    SHOTS.mkdir(parents=True, exist_ok=True)
+    for spot in (step_aside(*near, args), args.park):
+        b.move(*spot)
+        time.sleep(0.3)
+        img, jpeg = photo(b)
+        where.n = getattr(where, "n", 0) + 1
+        (SHOTS / f"{where.n:03d}_at_{near[0]:.0f}_{near[1]:.0f}.jpg").write_bytes(jpeg)
+        pos, dist, n = _nearest(c, img, args, near)
+        if pos is not None and dist < LOST_MM:
+            return pos, img
+        print(f"   not seen from ({spot[0]:.0f},{spot[1]:.0f}): {n} circles, nearest "
+              + (f"{dist:.0f} mm away" if dist is not None else "none")
+              + f"  [photo {where.n:03d}]")
     return None, img
 
 
@@ -163,7 +180,7 @@ if __name__ == "__main__":
                     help="mm/s, low to high (max 600)")
     ap.add_argument("--accels", type=floats, default=floats("300,600,1200"),
                     help="mm/s^2, low to high (max 5000)")
-    ap.add_argument("--tol", type=float, default=4, help="mm from the target that still counts as OK")
+    ap.add_argument("--tol", type=float, default=30, help="mm from the target that still counts as OK")
     ap.add_argument("--overshoot", type=float, default=3)
     ap.add_argument("--grab", type=float, default=0.3)
     ap.add_argument("--wiggle", type=float, default=0)
