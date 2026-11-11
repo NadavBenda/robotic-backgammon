@@ -8,8 +8,9 @@ How it works: one checker rides on the magnet to each grid point. At every point
 turns off, a photo is taken and the checker is found in it (dark ring, Hough circles).
 A window shows the guess (green). Enter = accept, click = put the centre there yourself,
 s = skip this point, q = stop.
-Before each photo the magnet parks at --park (default 415,415) so the carriage does not
-hide the checker; points near it use --park2 (default 0,0). After the first two rows the guess uses the points so far, so most of
+Before each photo the magnet steps aside by --away mm in both axes (towards larger
+coordinates, or smaller near the far edge) so the carriage and rail do not hide the checker.
+After the first two rows the guess uses the points so far, so most of
 the time you only press Enter.
 Photos are saved in captures/calib/.
 """
@@ -89,6 +90,13 @@ def ask(img, guess, label):
             return "quit"
 
 
+def step_aside(x, y, args):
+    """A spot --away mm from (x, y) in both axes: larger, or smaller if that leaves the board."""
+    ax = x + args.away if x + args.away <= args.xmax else x - args.away
+    ay = y + args.away if y + args.away <= args.ymax else y - args.away
+    return ax, ay
+
+
 def magnet_on(b):
     while True:
         try:
@@ -114,9 +122,7 @@ def run(args):
             magnet_on(b)
             b.move(x, y)
             b.magnet(False)
-            # park the magnet carriage away so it does not hide the checker
-            park = args.park if np.hypot(x - args.park[0], y - args.park[1]) > args.near else args.park2
-            b.move(*park)
+            b.move(*step_aside(x, y, args))  # so the carriage does not hide the checker
             time.sleep(0.3)
             img, jpeg = photo(b)
             b.move(x, y)  # back under the checker (magnet off), the next loop turns it on
@@ -182,11 +188,10 @@ if __name__ == "__main__":
     ap.add_argument("--xmax", type=float, default=415)
     ap.add_argument("--ymax", type=float, default=420)
     ap.add_argument("--margin", type=float, default=15, help="mm from each edge")
+    ap.add_argument("--away", type=float, default=80,
+                    help="mm the magnet steps aside in each axis before a photo")
     ap.add_argument("--park", type=lambda t: tuple(map(float, t.split(","))), default=(415, 415),
-                    help="where the magnet waits during each photo, x,y in mm")
-    ap.add_argument("--park2", type=lambda t: tuple(map(float, t.split(","))), default=(0, 0),
-                    help="park used for points close to --park")
-    ap.add_argument("--near", type=float, default=120, help="mm: closer than this to --park uses --park2")
+                    help="test mode: where the magnet waits during the photo, x,y in mm")
     ap.add_argument("--auto", action="store_true", help="accept guesses that match the prediction")
     a = ap.parse_args()
     (test if a.mode == "test" else run)(a)
