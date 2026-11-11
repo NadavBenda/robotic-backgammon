@@ -13,7 +13,7 @@
  *   C              capture: "IMG <n>" line, then exactly n JPEG bytes, then DONE   ERR CAM
  *                  (allowed with the magnet on, but warns "! CAPTURE_WITH_MAG_ON")
  *   P <v> <a>      drag profile used while the magnet is on: top speed mm/s, accel mm/s^2
- *                  (default 120 / 300, speed up to 200; magnet off uses 120 / 600)   ERR ARGS
+ *                  (default 120 / 300, up to 600 / 5000; magnet off uses 120 / 600)   ERR ARGS
  *   ?              "POS <x> <y> HOMED <0/1> MAG <0/1> HEAT <%> CAM <0/1> DRAG_V <v> DRAG_A <a>", then DONE
  *
  *   Other lines from the board:
@@ -200,7 +200,7 @@ const char* moveTrapezoidal(long dX, long dY) {
     }
 
     int halfDelayUs = lround((1000000.0 / currentSpeed) / 2.0);
-    if (halfDelayUs < 50) halfDelayUs = 50;
+    if (halfDelayUs < 15) halfDelayUs = 15;  // ~30000 צעדים/ש' = ~750 מ"מ/ש', רק כדי שלא ייתקע
 
     countA += stepsA;
     countB += stepsB;
@@ -346,7 +346,7 @@ void execute(String cmd) {
       reply(captureToSerial());
       break;
     case 'P':
-      if (!parseTwo(cmd, a, b) || a < 20 || a > 200 || b < 50 || b > 2000) { reply("ARGS"); break; }
+      if (!parseTwo(cmd, a, b) || a < 20 || a > 600 || b < 50 || b > 5000) { reply("ARGS"); break; }
       dragMaxSteps = a * STEPS_PER_MM;
       dragAccelSteps = b * STEPS_PER_MM;
       reply(nullptr);

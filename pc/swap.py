@@ -144,7 +144,7 @@ def main(args):
     print(f"calib.json: error {c.rms_mm:.1f} mm RMS, worst {c.max_mm:.1f} mm")
     done = 0
     with Board(args.port) as b:
-        b.home()
+        b.home_if_needed()
         if args.drag:
             b.drag_profile(*args.drag)
         while done < args.times:
@@ -162,7 +162,6 @@ def main(args):
                 continue
             swap(b, *pair, args)
             done += 1
-        b.move(*args.park)
         b.magnet(False)
     cv2.destroyAllWindows()
     print(f"{done} swaps.")
