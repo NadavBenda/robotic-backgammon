@@ -142,8 +142,7 @@ def run(args):
     px, mm = [], []
     old = saved_maps()
     with Board(args.port) as b:
-        print("Homing...")
-        b.home()
+        b.home_if_needed()
         b.move(*pts[0])
         input(f"Put ONE checker on the glass right above the magnet (at {pts[0]}), then Enter: ")
         for i, (x, y) in enumerate(pts):
@@ -193,7 +192,7 @@ def test(args):
     c = calib.load()
     print(f"calib.json: error {c.rms_mm:.1f} mm RMS, worst {c.max_mm:.1f} mm")
     with Board(args.port) as b:
-        b.home()
+        b.home_if_needed()
         while True:
             b.move(*args.park)
             img, _ = photo(b)

@@ -16,6 +16,9 @@ import serial  # pip install pyserial
 from serial.tools import list_ports
 
 
+PARK_CLOSE = (5, 5)  # mm, where the carriage waits after close()
+
+
 class BoardError(RuntimeError):
     pass
 
@@ -50,8 +53,11 @@ class Board:
         self.close()
 
     def close(self):
+        """Magnet off, then park near 0,0 so the next H is short."""
         try:
             self.command("M 0", timeout=2)
+            if self.status().get("HOMED"):
+                self.move(*PARK_CLOSE)
         except Exception:
             pass
         self.ser.close()
@@ -108,6 +114,12 @@ class Board:
     # -- commands --------------------------------------------------------
     def home(self):
         self.command("H", timeout=60)
+
+    def home_if_needed(self, force=False):
+        """H only when the board does not know where it is (after a reset / power-up)."""
+        if force or not self.status().get("HOMED"):
+            print("Homing...")
+            self.home()
 
     def move(self, x_mm, y_mm):
         self.command(f"G {x_mm:.2f} {y_mm:.2f}", timeout=30)
