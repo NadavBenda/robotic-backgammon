@@ -7,7 +7,9 @@
 How it works: one checker rides on the magnet to each grid point. At every point the magnet
 turns off, a photo is taken and the checker is found in it (dark ring, Hough circles).
 A window shows the guess (green). Enter = accept, click = put the centre there yourself,
-s = skip this point, q = stop. After the first two rows the guess uses the points so far, so most of
+s = skip this point, q = stop.
+Before each photo the magnet parks at --park (default 415,415) so the carriage does not
+hide the checker; points near it use --park2 (default 0,0). After the first two rows the guess uses the points so far, so most of
 the time you only press Enter.
 Photos are saved in captures/calib/.
 """
@@ -112,8 +114,12 @@ def run(args):
             magnet_on(b)
             b.move(x, y)
             b.magnet(False)
+            # park the magnet carriage away so it does not hide the checker
+            park = args.park if np.hypot(x - args.park[0], y - args.park[1]) > args.near else args.park2
+            b.move(*park)
             time.sleep(0.3)
             img, jpeg = photo(b)
+            b.move(x, y)  # back under the checker (magnet off), the next loop turns it on
             (OUT / f"p{i:02d}_{x:.0f}_{y:.0f}.jpg").write_bytes(jpeg)
             pred = predict(px, mm, (x, y), args.n)
             circles = find_circles(img)
@@ -154,6 +160,7 @@ def test(args):
     with Board(args.port) as b:
         b.home()
         while True:
+            b.move(*args.park)
             img, _ = photo(b)
             ans = ask(img, None, "click a checker, Enter = go there, q = quit")
             if ans in ("quit", "skip"):
@@ -175,6 +182,11 @@ if __name__ == "__main__":
     ap.add_argument("--xmax", type=float, default=415)
     ap.add_argument("--ymax", type=float, default=420)
     ap.add_argument("--margin", type=float, default=15, help="mm from each edge")
+    ap.add_argument("--park", type=lambda t: tuple(map(float, t.split(","))), default=(415, 415),
+                    help="where the magnet waits during each photo, x,y in mm")
+    ap.add_argument("--park2", type=lambda t: tuple(map(float, t.split(","))), default=(0, 0),
+                    help="park used for points close to --park")
+    ap.add_argument("--near", type=float, default=120, help="mm: closer than this to --park uses --park2")
     ap.add_argument("--auto", action="store_true", help="accept guesses that match the prediction")
     a = ap.parse_args()
     (test if a.mode == "test" else run)(a)
