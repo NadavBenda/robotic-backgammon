@@ -174,7 +174,7 @@ if __name__ == "__main__":
     ap.add_argument("--port")
     ap.add_argument("--times", type=int, default=1, help="how many swaps")
     ap.add_argument("--auto", action="store_true", help="no window when exactly 2 are found")
-    ap.add_argument("--park", type=lambda t: tuple(map(float, t.split(","))), default=(415, 415),
+    ap.add_argument("--park", type=lambda t: tuple(map(float, t.split(","))), default=(410, 420),
                     help="where the magnet waits during the photo, x,y in mm")
     ap.add_argument("--side", type=float, default=40,
                     help="min mm from the middle of A-B to the waiting spot (grows if needed)")
@@ -185,6 +185,6 @@ if __name__ == "__main__":
                     help="mm past the target before the magnet lets go (the checker lags)")
     ap.add_argument("--wiggle", type=float, default=0,
                     help="mm radius of a small circle under the checker after grabbing (0 = off)")
-    ap.add_argument("--xmax", type=float, default=415)
+    ap.add_argument("--xmax", type=float, default=410)
     ap.add_argument("--ymax", type=float, default=420)
     main(ap.parse_args())
