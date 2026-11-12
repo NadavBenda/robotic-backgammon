@@ -178,7 +178,7 @@ if __name__ == "__main__":
     ap.add_argument("--port")
     ap.add_argument("--times", type=int, default=1, help="how many swaps")
     ap.add_argument("--auto", action="store_true", help="no window when exactly 2 are found")
-    ap.add_argument("--park", type=lambda t: tuple(map(float, t.split(","))), default=(410, 420),
+    ap.add_argument("--park", type=lambda t: tuple(map(float, t.split(","))), default=(205, 420),
                     help="where the magnet waits during the photo, x,y in mm")
     ap.add_argument("--side", type=float, default=40,
                     help="min mm from the middle of A-B to the waiting spot (grows if needed)")

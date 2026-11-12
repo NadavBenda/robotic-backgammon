@@ -30,7 +30,7 @@ from helpers import photo, step_aside
 from paths import CHECKER_MM, NoPath, XMAX, YMAX, drag, length, plan
 
 WIN = "move"
-PARK = (XMAX, YMAX)
+PARK = (205.0, 420.0)   # same spot as the game (Layout.park): the camera sees the whole board
 AWAY = 80
 OK_MM = 5.0
 SHOTS = Path(__file__).parent / "captures" / "move"

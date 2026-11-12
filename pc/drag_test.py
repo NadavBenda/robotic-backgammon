@@ -187,7 +187,7 @@ if __name__ == "__main__":
     ap.add_argument("--overshoot", type=float, default=5)
     ap.add_argument("--grab", type=float, default=0.3)
     ap.add_argument("--wiggle", type=float, default=0)
-    ap.add_argument("--park", type=lambda t: tuple(map(float, t.split(","))), default=(410, 420),
+    ap.add_argument("--park", type=lambda t: tuple(map(float, t.split(","))), default=(205, 420),
                     help="where the magnet waits for the first photo and at the end")
     ap.add_argument("--away", type=float, default=80,
                     help="mm the magnet steps aside in each axis before a photo")
