@@ -32,7 +32,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-PATH = Path(__file__).parent / "vision_model.json"
+PATH = Path(__file__).resolve().parents[1] / "vision_model.json"
 CLASSES = ("empty", "robot", "human")
 STEEL_R, RIM = 7.0, (10.0, 12.5)   # mm: steel disc radius, rim ring from-to
 
@@ -187,7 +187,7 @@ def find_slots(lab, c, L, model, depth=8):
 
 
 def find_hough(img, lab, c, L, model):
-    from calibrate import find_circles
+    from helpers import find_circles
     found = []
     for u, v, _ in find_circles(img):
         x, y = (float(t) for t in c.px_to_mm(u, v))

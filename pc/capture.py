@@ -6,6 +6,10 @@
 Photos are saved in captures/ with a timestamp and shown in a window: corrected
 (seen from straight above, 2 px per mm) when calib.json exists, saved also as *_top.jpg.
 """
+import sys  # noqa: E402
+from pathlib import Path as _P
+sys.path.insert(0, str(_P(__file__).resolve().parent / "lib"))  # the internal code lives in lib/
+
 import sys
 import time
 from pathlib import Path

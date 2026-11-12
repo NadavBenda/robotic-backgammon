@@ -166,7 +166,7 @@ def length(path):
 
 def drag(b, path, overshoot=OVERSHOOT, grab_s=GRAB_S, xmax=XMAX, ymax=YMAX):
     """Drive the magnet along a planned path with the checker on it."""
-    from calibrate import magnet_on  # waits if the magnet is hot
+    from helpers import magnet_on  # waits if the magnet is hot
     b.move(*path[0])
     magnet_on(b)
     time.sleep(grab_s)

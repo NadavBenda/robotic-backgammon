@@ -219,3 +219,6 @@ __marimo__/
 
 # game logs and photos (pc/game.py)
 pc/games/
+
+# internal PC code folder (overrides lib/ above)
+!pc/lib/

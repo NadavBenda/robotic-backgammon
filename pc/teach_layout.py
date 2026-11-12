@@ -12,12 +12,16 @@
    as "affine"; the slots are drawn again so you can check. s = skip a point.
 Needs calib.json (py calibrate.py). The photo is shown corrected (top view).
 """
+import sys  # noqa: E402
+from pathlib import Path as _P
+sys.path.insert(0, str(_P(__file__).resolve().parent / "lib"))  # the internal code lives in lib/
+
 import cv2
 
 import calib
 import ui
 from board import Board
-from calibrate import ask, photo
+from helpers import ask, photo
 from layout import Layout, fit_affine
 
 WIN = "layout"

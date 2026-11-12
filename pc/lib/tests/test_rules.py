@@ -2,7 +2,7 @@
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # lib/
 
 import rules  # noqa: E402
 from rules import OPENING, legal_moves, move_text  # noqa: E402

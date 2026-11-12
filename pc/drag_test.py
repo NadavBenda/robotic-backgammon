@@ -16,6 +16,10 @@ Then click the next checker to test it too, or q to finish. At the end: a table 
 checker, captures/drag_test.csv, and the profile that held for every checker tested,
 left set on the board until the next reset.
 """
+import sys  # noqa: E402
+from pathlib import Path as _P
+sys.path.insert(0, str(_P(__file__).resolve().parent / "lib"))  # the internal code lives in lib/
+
 import argparse
 import csv
 import time
@@ -26,7 +30,7 @@ import numpy as np
 import calib
 import ui
 from board import Board
-from calibrate import ask, photo, step_aside
+from helpers import ask, photo, step_aside
 from swap import carry
 
 OUT = Path(__file__).parent / "captures"

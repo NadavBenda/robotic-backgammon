@@ -12,6 +12,10 @@ Two modes:
   developer also every log line from the board (#) and how long each command took
 Switch with the secret word below.
 """
+import sys  # noqa: E402
+from pathlib import Path as _P
+sys.path.insert(0, str(_P(__file__).resolve().parent / "lib"))  # the internal code lives in lib/
+
 import sys
 import time
 from pathlib import Path

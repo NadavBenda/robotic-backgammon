@@ -9,12 +9,16 @@ First the robot's 15 checkers (one colour), then your 15 (the other colour).
   Enter = placed    s = skip this one    b = back one    q = stop
 At the end the cart parks in the middle lane (bar row), out of the camera's way.
 """
+import sys  # noqa: E402
+from pathlib import Path as _P
+sys.path.insert(0, str(_P(__file__).resolve().parent / "lib"))  # the internal code lives in lib/
+
 import time
 
 import rules
 import ui
 from board import Board
-from calibrate import magnet_on
+from helpers import magnet_on
 from layout import Layout
 
 PULSE_S = 0.4
