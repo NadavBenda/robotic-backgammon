@@ -102,6 +102,7 @@ class Calib:
         self.to_mm, self.to_px = to_mm, to_px
         self.rms_mm, self.max_mm = rms_mm, max_mm
         self.size = to_mm.size   # (width, height) of the photos it was made from
+        self.points = []         # [(u, v, x, y, err_mm)] the measured points (newer files only)
 
     def check(self, img):
         """Refuse a photo of another size than the one calibrated (resolution changed)."""
@@ -120,6 +121,7 @@ class Calib:
         Path(path).write_text(json.dumps({
             "to_mm": self.to_mm.dump(), "to_px": self.to_px.dump(),
             "rms_mm": self.rms_mm, "max_mm": self.max_mm,
+            "points": [[round(float(t), 2) for t in p] for p in self.points],
         }, indent=1))
 
 
@@ -137,6 +139,7 @@ def fit(px, mm, deg=2, size=OLD_SIZE):
         errs.append(float(np.hypot(*(np.array(m(px[i, 0], px[i, 1])) - mm[i]))))
     c.rms_mm = float(np.sqrt(np.mean(np.square(errs))))
     c.max_mm = float(np.max(errs))
+    c.points = [(*px[i], *mm[i], errs[i]) for i in range(len(px))]
     return c
 
 
@@ -198,4 +201,6 @@ def load(path=PATH):
     d = json.loads(Path(path).read_text())
     mk = lambda m: _Map(m["H"], m["corr"], m["unit"], m["deg"], m.get("k", (0.0, 0.0)),
                         m.get("size", OLD_SIZE))
-    return Calib(mk(d["to_mm"]), mk(d["to_px"]), d.get("rms_mm"), d.get("max_mm"))
+    c = Calib(mk(d["to_mm"]), mk(d["to_px"]), d.get("rms_mm"), d.get("max_mm"))
+    c.points = [tuple(p) for p in d.get("points", [])]
+    return c
