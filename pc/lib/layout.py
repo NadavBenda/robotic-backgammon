@@ -35,7 +35,7 @@ import numpy as np
 
 from gnubg import BAR, OFF  # noqa: F401
 
-PATH = Path(__file__).parent / "layout.json"
+PATH = Path(__file__).resolve().parents[1] / "layout.json"
 
 
 @dataclass

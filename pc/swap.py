@@ -15,6 +15,10 @@ A -> spot, B -> A, spot -> B. Each new swap starts from a fresh photo, so small
 placement errors do not add up. Before letting go the magnet goes --overshoot mm (3)
 past the target, because the checker lags a little behind it.
 """
+import sys  # noqa: E402
+from pathlib import Path as _P
+sys.path.insert(0, str(_P(__file__).resolve().parent / "lib"))  # the internal code lives in lib/
+
 import argparse
 import time
 
@@ -24,7 +28,7 @@ import numpy as np
 import calib
 import ui
 from board import Board
-from calibrate import find_circles, magnet_on, photo
+from helpers import find_circles, magnet_on, photo
 
 WIN = "swap"
 CHECKER_MM = 26.0

@@ -23,6 +23,10 @@ accepted. Not exact but the photo is consistent (15 + 15) -> accepted with a war
 after fixing / take the closest legal move.
 Every game: games/<date-time>.jsonl (one line per turn) and the photos next to it.
 """
+import sys  # noqa: E402
+from pathlib import Path as _P
+sys.path.insert(0, str(_P(__file__).resolve().parent / "lib"))  # the internal code lives in lib/
+
 import json
 import queue
 import random

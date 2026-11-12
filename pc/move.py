@@ -13,6 +13,10 @@ Every photo is shown corrected (seen from straight above, from calib.json).
 Repeat from 2; the list of checkers is kept up to date. At the end: how many moves landed
 within 5 mm and how many disturbed a neighbour. Photos: captures/move/.
 """
+import sys  # noqa: E402
+from pathlib import Path as _P
+sys.path.insert(0, str(_P(__file__).resolve().parent / "lib"))  # the internal code lives in lib/
+
 import time
 from pathlib import Path
 
@@ -22,7 +26,7 @@ import numpy as np
 import calib
 import ui
 from board import Board
-from calibrate import photo, step_aside
+from helpers import photo, step_aside
 from paths import CHECKER_MM, NoPath, XMAX, YMAX, drag, length, plan
 
 WIN = "move"

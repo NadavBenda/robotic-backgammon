@@ -21,7 +21,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-PATH = Path(__file__).parent / "calib.json"
+PATH = Path(__file__).resolve().parents[1] / "calib.json"
 
 
 def _terms(a, b, deg):
