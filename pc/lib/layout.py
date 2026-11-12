@@ -166,9 +166,13 @@ class Layout:
         return out
 
     def park(self):
-        """Where the magnet waits during a photo: middle of the lane on the bar row, so the
-        cart (seen from below, it hides what is above it) covers no checker."""
-        return self.to_magnet(self.xmax / 2, self._row_y(6))
+        """Where the magnet waits during a photo: middle of the lane, at the far end of its
+        travel (y max). Checked on the real board 12.11: in the middle of the board the cart
+        and its rail hide a whole band from the camera; at y max the rail is beyond every
+        checker. x in the lane so the cart is not under a bear-off tray slot."""
+        lo, hi = self.lane_x()
+        x = float(self.to_magnet((lo + hi) / 2, self._row_y(6))[0])
+        return (x, float(self.ymax))
 
     def lane_x(self):
         """x range of the free middle lane in the picture frame (no checker of a full
