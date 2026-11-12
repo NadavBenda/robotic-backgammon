@@ -49,6 +49,7 @@ class SimBoard:
         self.drag = (180, 800)
         self.free = (150, 1200)
         self.bumps = 0
+        self.under = 0       # times the cart passed right under a checker with the magnet off
         self.bump_log = []
         self.moves = 0
         self.travel = 0.0
@@ -109,6 +110,15 @@ class SimBoard:
                 p = a + t * d - lag
                 c[0], c[1] = float(p[0]), float(p[1])
                 self._push(self.held)
+        elif L0 := float(np.hypot(*(z - a))):
+            # magnet off: count checkers the cart passes right under (they may shift on the real board)
+            p = np.asarray([c[:2] for c in self.ck], float).reshape(-1, 2)
+            if len(p):
+                ab = z - a
+                t = np.clip(((p - a) @ ab) / (ab @ ab), 0, 1)
+                d = np.hypot(*(p - (a + t[:, None] * ab)).T)
+                ends = np.minimum(np.hypot(*(p - a).T), np.hypot(*(p - z).T))
+                self.under += int(np.sum((d < 8) & (ends > 8)))
         self.pos = [x, y]
 
     def _push(self, i):
