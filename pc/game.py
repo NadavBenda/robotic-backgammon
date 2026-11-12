@@ -14,7 +14,7 @@ Everything is chosen on the page (Settings), not with flags:
   Your move by hand + "Done" button / by hand + automatic (the robot watches until the
             board shows a legal move and stays still) / pick it on the page and the robot
             moves your checkers (remote play, or nobody wants to touch the board)
-  Vision    scan (default) / slots / hough  (see vision.py)
+  Vision    norm (default, measured on the real board 12.11) / scan / slots / hough  (see vision.py)
 
 How a human move is read: park the magnet in the lane, photo, vision.read, then the
 board that fits best among the legal results of this roll (vision.closest). Exact fit ->
@@ -52,7 +52,7 @@ DEFAULTS = {
     "engine": "gnubg",           # gnubg | simple | random
     "dice": "digital",           # digital | typed | camera
     "human_move": "done_button",  # done_button | auto | robot_moves
-    "vision": "scan",            # scan | slots | hough
+    "vision": "norm",            # norm | scan | slots | hough
     "coach": False,              # watch / human turns: show gnubg's choice
     "first": "roll",             # roll (opening roll) | robot | human
     "board": "auto",             # auto (real, else simulator) | real | sim
@@ -226,7 +226,7 @@ class Game:
             self.photo_t = time.time()
         if self.logfile:
             n = len(self.history)
-            cv2.imwrite(str(self.logfile.with_suffix("")) + f"_{n:03d}.jpg", img)
+            cv2.imencode(".jpg", img)[1].tofile(str(self.logfile.with_suffix("")) + f"_{n:03d}.jpg")  # works with Hebrew paths
         return r, img
 
     def learn_colours(self):
