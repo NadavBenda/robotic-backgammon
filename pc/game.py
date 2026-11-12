@@ -16,7 +16,10 @@ Everything is chosen on the page (Settings), not with flags:
             moves your checkers (remote play, or nobody wants to touch the board)
   Vision    norm (default, measured on the real board 12.11) / scan / slots / hough  (see vision.py)
 
-How a human move is read: park the magnet in the lane, photo, vision.read, then the
+How a human move is read: park the magnet in the lane, photo. First by change: compare
+with the photo before the move (vision.closest_by_change); if exactly one legal move explains
+the slots that changed, that is the move (no colours needed; notes, light and hidden spots
+cancel out). Otherwise: vision.read, then the
 board that fits best among the legal results of this roll (vision.closest). Exact fit ->
 accepted. Not exact but the photo is consistent (15 + 15) -> accepted with a warning
 (legality is only a warning, Nadav 7.11). Not consistent -> the page asks: read again
@@ -90,6 +93,7 @@ class Game:
         self.warnings = []
         self.coach = None
         self.photo = None                  # jpeg bytes with what vision found
+        self.last_img = None               # the last photo (of the board as it was known), for reading by change
         self.winner = None
         self.logfile = None
 
@@ -227,6 +231,7 @@ class Game:
         if self.logfile:
             n = len(self.history)
             cv2.imencode(".jpg", img)[1].tofile(str(self.logfile.with_suffix("")) + f"_{n:03d}.jpg")  # works with Hebrew paths
+        self.last_img = img
         return r, img
 
     def learn_colours(self):
@@ -331,10 +336,17 @@ class Game:
         return expected_after(view, steps)
 
     def check_after_robot(self, expected):
-        r, _ = self.look()
+        before, board0 = self.last_img, list(self.board)
+        r, img = self.look()
         if r.board == expected:
             self.ex.set_from_reading(r)
             return
+        if before is not None:   # what changed since the last photo is exactly this move: fine
+            changed, _ = vision.slot_changes(before, img, self.c, self.L)
+            if vision.change_cost(changed, self.L, board0, expected) == 0:
+                self.log_fn("after the robot's move: read by change (the photo matches the move)")
+                self.ex.set_from_board(expected)
+                return
         diff = [i for i in range(26) if r.board[i] != expected[i]]
         self.warn(f"after the robot's move the camera sees something else at {diff[:6]}"
                   + (f": {r.warnings[0]}" if r.warnings else ""))
@@ -369,6 +381,7 @@ class Game:
         to_robot = (lambda nb: rules.flip(nb)) if side == "human" else (lambda nb: list(nb))
         cands = [to_robot(nb) for _, nb in plays]
         how = self.s["human_move"]
+        before = self.last_img   # photo of the board before this move (after the last one)
 
         if how == "robot_moves":
             self.drain()
@@ -402,6 +415,15 @@ class Game:
                 if a["name"] == "done":
                     break
             r, _ = self.look()
+        if before is not None and self.last_img is not before:
+            best, cost, margin = vision.closest_by_change(before, self.last_img, self.c, self.L,
+                                                          self.board, cands)
+            if cost == 0 and margin >= 1:   # exactly one legal move explains what changed
+                steps = next(s for s, nb in plays if to_robot(nb) == best)
+                self.log_fn(f"{side}'s move read by change: {rules.move_text(steps)}")
+                self.finish_human(side, d, steps, best, "read by change")
+                self.ex.set_from_board(best)
+                return
         self.accept_reading(r, cands, plays, hv, d, side, to_robot)
 
     def sim_hand_move(self, hv, d, text, side):

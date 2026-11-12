@@ -242,9 +242,34 @@ def _gray(img):
     return cv2.cvtColor(cv2.GaussianBlur(img, (3, 3), 0), cv2.COLOR_BGR2GRAY)
 
 
+class _Shifted:
+    """The calibration moved by (du, dv) pixels in the photo: the camera, mirror or glass
+    moved a little since calibrate.py (seen on the real board 12.11: 8 px, 17 px)."""
+    def __init__(self, c, du, dv):
+        self.c, self.du, self.dv = c, du, dv
+
+    def mm_to_px(self, x, y):
+        u, v = self.c.mm_to_px(x, y)
+        return np.asarray(u, float) + self.du, np.asarray(v, float) + self.dv
+
+
+def find_shift(g, c, L, board, reach=40):
+    """(du, dv) pixels that make the checkers of a known board stand out most from the glass
+    under their slots (darker on the real board, lighter in the simulator)."""
+    xy = np.array([q for q, _ in L.place(board).values()], float)
+    cost = lambda du, dv: -abs(float(norm_features(g, _Shifted(c, du, dv), xy)[:, 0].mean()) - 1)  # noqa: E731
+    best = min(((cost(du, dv), du, dv) for du in range(-reach, reach + 1, 4)
+                for dv in range(-reach, reach + 1, 4)))
+    _, u0, v0 = best
+    best = min(((cost(du, dv), du, dv) for du in range(u0 - 3, u0 + 4) for dv in range(v0 - 3, v0 + 4)))
+    return best[1], best[2]
+
+
 def learn_norm(img, c, L, board):
     """Thresholds of the "norm" method from a photo of a known board."""
     g = _gray(img)
+    du, dv = find_shift(g, c, L, board)
+    c = _Shifted(c, du, dv)
     placed = L.place(board)
     taken = [xy for xy, _ in placed.values()]
     occ = {"robot": [], "human": []}
@@ -265,6 +290,7 @@ def learn_norm(img, c, L, board):
         mr, mh = float(np.median(rob[:, 1])), float(np.median(hum[:, 1]))
         n["colour"] = (mr + mh) / 2
         n["light"] = "human" if mh > mr else "robot"
+    n["shift"] = [du, dv]
     return n
 
 
@@ -273,6 +299,8 @@ def find_norm(img, c, L, model, depth=7):
     Slots whose glass is much darker than the picture's glass are hidden (not read)."""
     n = model.norm if model is not None and model.norm else NORM_DEFAULT
     g = _gray(img)
+    if n.get("shift"):
+        c = _Shifted(c, *n["shift"])
     dark = "robot" if n["light"] == "human" else "human"
     found, hidden = [], []
     places = list(range(1, 25)) + ["bar_robot", "bar_human", "off_robot", "off_human"]
@@ -391,6 +419,78 @@ def closest(r, candidates):
     """(board, cost) of the candidate that fits the reading best (cost 0 = exact)."""
     best = min(candidates, key=lambda cb: mismatch(r, cb))
     return best, mismatch(r, best)
+
+
+# -- reading by change: compare with the photo taken before the move -------------------
+DELTA_R = 10.0          # mm, disc around each slot that is compared
+DELTA_MIN = 0.12        # a slot changed when |after - before| / glass is above this (or 3x the typical)
+_DELTA_OFFS = _ring(0, DELTA_R, 5, 24)
+
+
+def _places(L):
+    """{place: [slot xy, ...]} every slot the change reading looks at."""
+    out = {p: [L.slot(p, i) for i in range(8)] for p in range(1, 25)}
+    for w in ("bar_robot", "bar_human"):
+        out[w] = [L.slot(w, i) for i in range(4)]
+    for w in ("off_robot", "off_human"):
+        out[w] = [L.slot(w, i) for i in range(15)]
+    return out
+
+
+def slot_changes(before, after, c, L):
+    """{(place, i): True/False} which slots look different between two photos (no colours
+    or learning needed: everything that did not move cancels out - notes on the glass,
+    light falloff, the rail, the cart, a checker that is hard to see)."""
+    gb, ga = _gray(before).astype(float), _gray(after).astype(float)
+    keys, xy = [], []
+    for w, pts in _places(L).items():
+        for i, q in enumerate(pts):
+            keys.append((w, i))
+            xy.append(q)
+    xy = np.array(xy, float)
+    P = xy[:, None, :] + _DELTA_OFFS[None]
+    u, v = c.mm_to_px(P[..., 0], P[..., 1])
+    u = np.clip(np.rint(np.asarray(u, float)), 0, gb.shape[1] - 1).astype(int)
+    v = np.clip(np.rint(np.asarray(v, float)), 0, gb.shape[0] - 1).astype(int)
+    a, b = ga[v, u], gb[v, u]
+    glass = np.maximum(np.percentile(np.maximum(a, b), 90, axis=1), 1.0)
+    d = np.abs(a - b).mean(1) / glass
+    t = max(DELTA_MIN, 3 * float(np.median(d)))
+    return dict(zip(keys, d > t)), dict(zip(keys, d))
+
+
+def _expected(L, b0, b1):
+    """{(place, i): True} the slots that change between two boards."""
+    p0, p1 = L.place(b0), L.place(b1)
+    return {k for k in set(p0) | set(p1) if (k in p0) != (k in p1)
+            or (k in p0 and p0[k][1] != p1[k][1])}
+
+
+def change_cost(changed, L, b0, b1):
+    """Mismatch between the slots seen to change and the slots that should change, counted
+    per place (a checker put a slot further along its point still counts as the right point)."""
+    exp = _expected(L, b0, b1)
+    seen, want = {}, {}
+    for (w, i), ch in changed.items():
+        seen[w] = seen.get(w, 0) + int(ch)
+    for w, i in exp:
+        want[w] = want.get(w, 0) + 1
+    return sum(abs(seen.get(w, 0) - want.get(w, 0)) for w in set(seen) | set(want))
+
+
+def closest_by_change(before, after, c, L, board, candidates):
+    """(best board, cost, margin) out of candidates, judged only by what changed since the
+    `before` photo of `board`. margin = cost of the second best minus the best."""
+    changed, _ = slot_changes(before, after, c, L)
+    uniq = []
+    for cb in candidates:
+        if list(cb) not in uniq:
+            uniq.append(list(cb))
+    candidates = uniq
+    costs = sorted(((change_cost(changed, L, board, cb), i) for i, cb in enumerate(candidates)))
+    best = candidates[costs[0][1]]
+    margin = (costs[1][0] - costs[0][0]) if len(costs) > 1 else 99
+    return best, costs[0][0], margin
 
 
 def draw(img, c, r, L=None):
