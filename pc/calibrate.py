@@ -211,7 +211,7 @@ if __name__ == "__main__":
     ap.add_argument("--margin", type=float, default=0, help="mm from each edge (0 = the grid reaches the limits)")
     ap.add_argument("--away", type=float, default=80,
                     help="mm the magnet steps aside in each axis before a photo")
-    ap.add_argument("--park", type=lambda t: tuple(map(float, t.split(","))), default=(410, 420),
+    ap.add_argument("--park", type=lambda t: tuple(map(float, t.split(","))), default=(205, 420),
                     help="test mode: where the magnet waits during the photo, x,y in mm")
     ap.add_argument("--auto", action="store_true", help="accept guesses that match the prediction")
     ui.keep_open()
