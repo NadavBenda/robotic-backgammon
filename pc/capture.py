@@ -3,7 +3,8 @@
     python capture.py            # Enter = take a photo, q + Enter = quit
     python capture.py COM5       # pick the port yourself
 
-Photos are saved in captures/ with a timestamp and shown in a window.
+Photos are saved in captures/ with a timestamp and shown in a window: corrected
+(seen from straight above, 2 px per mm) when calib.json exists, saved also as *_top.jpg.
 """
 import sys
 import time
@@ -28,14 +29,8 @@ def main():
             path.write_bytes(jpeg)
             img = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
             print(f"{path.name}: {img.shape[1]}x{img.shape[0]}, {len(jpeg) // 1024} KB, {time.time() - t0:.2f} s")
-            cv2.imshow("board", img)
-            try:   # after calibration: also the straightened top view
-                import calib
-                flat = calib.topdown(img, calib.load())
-                cv2.imwrite(str(path.with_name(path.stem + "_top.jpg")), flat)
-                cv2.imshow("board from above (1 px = 1 mm)", flat)
-            except (OSError, ValueError, KeyError):
-                pass
+            from console import show_photo
+            show_photo(path, img)
             cv2.waitKey(1)
     cv2.destroyAllWindows()
 

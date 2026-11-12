@@ -49,20 +49,22 @@ def where(b, c, args, target, label):
     img, jpeg = photo(b)
     where.n = getattr(where, "n", 0) + 1
     (SHOTS / f"{where.n:03d}_to_{target[0]:.0f}_{target[1]:.0f}.jpg").write_bytes(jpeg)
-    ans = ask(img, None, label, (c.px_to_mm, c.mm_to_px),
+    top, f = calib.view(img, c)   # shown corrected, seen from straight above
+    ans = ask(top, None, label, (f.px_to_mm, f.mm_to_px),
               "click the checker, Enter=OK  s=can't see it  q=stop")
     if ans == "quit":
         return "quit", img
     if ans == "skip":
         return None, img
-    return tuple(float(t) for t in c.px_to_mm(*ans)), img
+    return tuple(float(t) for t in f.px_to_mm(*ans)), img
 
 
 def click_mm(c, img, label):
-    ans = ask(img, None, label, (c.px_to_mm, c.mm_to_px), "click it, Enter=OK  q=stop")
+    top, f = calib.view(img, c)
+    ans = ask(top, None, label, (f.px_to_mm, f.mm_to_px), "click it, Enter=OK  q=stop")
     if ans in ("quit", "skip"):
         return None
-    return tuple(float(t) for t in c.px_to_mm(*ans))
+    return tuple(float(t) for t in f.px_to_mm(*ans))
 
 
 def test_one(b, c, args, a_pt, b_pt):

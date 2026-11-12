@@ -48,9 +48,10 @@ def photo(b):
 
 
 def find_circles(img):
+    s = img.shape[1] / 1024  # the sizes below were tuned on 1024 px wide photos
     g = cv2.medianBlur(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), 5)
-    c = cv2.HoughCircles(g, cv2.HOUGH_GRADIENT, dp=1.2, minDist=20,
-                         param1=100, param2=28, minRadius=6, maxRadius=70)
+    c = cv2.HoughCircles(g, cv2.HOUGH_GRADIENT, dp=1.2, minDist=20 * s,
+                         param1=100, param2=28, minRadius=int(6 * s), maxRadius=int(70 * s))
     return [] if c is None else [(float(x), float(y), float(r)) for x, y, r in c[0]]
 
 
@@ -82,7 +83,7 @@ def saved_maps():
         c = calib.load()
     except (OSError, ValueError, KeyError):
         return None
-    return c.px_to_mm, c.mm_to_px
+    return c
 
 
 def ask(img, guess, label, maps=None, keys="Enter=OK  click=fix  s=skip  q=stop"):
@@ -154,22 +155,25 @@ def run(args):
             img, jpeg = photo(b)
             b.move(x, y)  # back under the checker (magnet off), the next loop turns it on
             (OUT / f"p{i:02d}_{x:.0f}_{y:.0f}.jpg").write_bytes(jpeg)
+            s = img.shape[1] / 1024
+            if old is not None and tuple(old.size) != (img.shape[1], img.shape[0]):
+                old = None  # made for another camera resolution: its ellipses would be wrong
             pred = predict(px, mm, (x, y), args.n)
             circles = find_circles(img)
             guess = None
             if circles:
                 ref = pred or (img.shape[1] / 2, img.shape[0] / 2)
                 c = min(circles, key=lambda c: np.hypot(c[0] - ref[0], c[1] - ref[1]))
-                if pred is None or np.hypot(c[0] - pred[0], c[1] - pred[1]) < 60:
+                if pred is None or np.hypot(c[0] - pred[0], c[1] - pred[1]) < 60 * s:
                     guess = (c[0], c[1])
             if guess is None and pred is not None:
                 guess = pred
             if args.auto and pred is not None and guess != pred and \
-                    np.hypot(guess[0] - pred[0], guess[1] - pred[1]) < 25:
+                    np.hypot(guess[0] - pred[0], guess[1] - pred[1]) < 25 * s:
                 ans = guess
             else:
                 ans = ask(img, guess, f"point {i + 1}/{len(pts)}  ({x:.0f}, {y:.0f}) mm",
-                          live_maps(px, mm, args.n) or old)
+                          live_maps(px, mm, args.n) or (old and (old.px_to_mm, old.mm_to_px)))
             if ans == "quit":
                 break
             if ans == "skip":
@@ -182,7 +186,7 @@ def run(args):
 
     if len(px) < 12:
         sys.exit(f"Only {len(px)} points, need at least 12 for the fit.")
-    c = calib.fit(px, mm)
+    c = calib.fit(px, mm, size=(img.shape[1], img.shape[0]))
     c.save()
     print(f"\nSaved {calib.PATH.name}: {len(px)} points, error {c.rms_mm:.1f} mm RMS, worst {c.max_mm:.1f} mm")
     print("Goal: worst under 3 mm. Check it with:  py calibrate.py test")
@@ -196,6 +200,7 @@ def test(args):
         while True:
             b.move(*args.park)
             img, _ = photo(b)
+            c.check(img)
             ans = ask(img, None, "test: click a checker", (c.px_to_mm, c.mm_to_px),
                       "Enter=go there  q=quit")
             if ans in ("quit", "skip"):

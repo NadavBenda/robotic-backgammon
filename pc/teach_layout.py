@@ -10,7 +10,7 @@
    deepest home point, bear-off side). Enter after each click.
    A best-fit (shift + rotation + scale + mirror) is computed and saved in layout.json
    as "affine"; the slots are drawn again so you can check. s = skip a point.
-Needs calib.json (py calibrate.py).
+Needs calib.json (py calibrate.py). The photo is shown corrected (top view).
 """
 import cv2
 
@@ -37,12 +37,13 @@ def overlay(img, c, L):
 
 
 def main():
-    c = calib.load()
+    cal = calib.load()
     L = Layout.load()
     with Board() as b:
         b.home_if_needed()
         b.move(*L.park())
         img, _ = photo(b)
+    img, c = calib.view(img, cal, xmax=L.xmax, ymax=L.ymax)   # corrected top view
     pick = ask(overlay(img, c, L), None, "Does the map sit on the board? q = yes, done.  click = no, fix it",
                (c.px_to_mm, c.mm_to_px), "click anywhere = fix   q = done")
     if pick == "quit":
