@@ -13,7 +13,7 @@
  *                  checker is let go before the next move          ERR MAG_HOT
  *   C              capture: "IMG <n>" line, then exactly n JPEG bytes, then DONE   ERR CAM
  *                  (allowed with the magnet on, but warns "! CAPTURE_WITH_MAG_ON")
- *   P <v> <a>      drag profile (magnet on): top speed mm/s, accel mm/s^2, default 150 / 300
+ *   P <v> <a>      drag profile (magnet on): top speed mm/s, accel mm/s^2, default 180 / 800
  *   F <v> <a>      free profile (magnet off), default 150 / 1200; starts at 40 mm/s so the
  *                  carriage leaves a checker sharply. Both up to 600 / 5000, kept until reset  ERR ARGS
  *   ?              "POS <x> <y> HOMED <0/1> MAG <0/1> HEAT <%> CAM <0/1> DRAG_V <v> DRAG_A <a> FREE_V <v> FREE_A <a>",
@@ -83,8 +83,8 @@ const int   RELEASE_MS        = 250;     // אחרי M 0: הסליל נפרק ו
 float freeMaxSteps   = 150.0 * STEPS_PER_MM;   // 150 מ"מ/ש'
 float freeAccelSteps = 1200.0 * STEPS_PER_MM;  // 1200 מ"מ/ש²
 // פרופיל גרירה כשהא"מ דולק: איטי ועדין יותר כדי שהאבן לא תישאר מאחור (משתנה בפקודה P)
-float dragMaxSteps   = 150.0 * STEPS_PER_MM;  // 150 מ"מ/ש'
-float dragAccelSteps = 300.0 * STEPS_PER_MM;  // 300 מ"מ/ש²
+float dragMaxSteps   = 180.0 * STEPS_PER_MM;  // 180 מ"מ/ש' (drag_test 12.11, Vref 0.86: 200 עבר, 250 חורק/נכשל)
+float dragAccelSteps = 800.0 * STEPS_PER_MM;  // 800 מ"מ/ש²
 
 Magnet mag(MAG_PIN, 40000);  // מקסימום 40 ש' ברצף, תקציב חום 60 ש'
 

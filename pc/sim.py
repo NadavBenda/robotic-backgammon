@@ -46,7 +46,7 @@ class SimBoard:
         self.mag = False
         self.held = None
         self.homed = False
-        self.drag = (150, 300)
+        self.drag = (180, 800)
         self.free = (150, 1200)
         self.bumps = 0
         self.bump_log = []
