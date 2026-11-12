@@ -65,6 +65,14 @@ def photo(b, tries=4):
     return img, jpeg
 
 
+def find_circles(img):
+    s = img.shape[1] / 1024  # the sizes below were tuned on 1024 px wide photos
+    g = cv2.medianBlur(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), 5)
+    c = cv2.HoughCircles(g, cv2.HOUGH_GRADIENT, dp=1.2, minDist=20 * s,
+                         param1=100, param2=28, minRadius=int(6 * s), maxRadius=int(70 * s))
+    return [] if c is None else [(float(x), float(y), float(r)) for x, y, r in c[0]]
+
+
 def ask(img, guess, label, maps=None, keys="Enter=OK  click=fix  s=skip  q=stop", retake=False):
     """Show the photo; return (u, v), 'skip', 'quit', or 'retake' (key r, when retake=True).
     maps = (to_mm, to_px): draw the expected outline of the checker bottom at the point."""
