@@ -27,7 +27,7 @@ import calib
 import ui
 from board import Board
 from helpers import photo, step_aside
-from paths import CHECKER_MM, NoPath, XMAX, YMAX, drag, length, plan
+from paths import CHECKER_MM, NoPath, XMAX, YMAX, drag, length, plan, travel
 
 WIN = "move"
 PARK = (205.0, 420.0)   # same spot as the game (Layout.park): the camera sees the whole board
@@ -90,9 +90,18 @@ def snap(p, marks):
     return min(near, key=lambda m: np.hypot(m[0] - p[0], m[1] - p[1])) if near else None
 
 
-def shot(b, at, c):
+CART = {"at": None}   # where the magnet is (None = unknown)
+
+
+def go(b, xy, marks):
+    """Magnet off, around the marked checkers."""
+    travel(b, CART["at"], xy, marks, XMAX, YMAX)
+    CART["at"] = tuple(xy)
+
+
+def shot(b, at, c, marks=()):
     """Photo, saved raw; returned corrected to the top view."""
-    b.move(*at)
+    go(b, at, marks)
     time.sleep(0.3)
     img, jpeg = photo(b)
     shot.n = getattr(shot, "n", 0) + 1
@@ -107,13 +116,13 @@ def main():
     marks, results = [], []
     with Board() as b:
         b.home_if_needed()
-        img = shot(b, PARK, cal)
+        img = shot(b, PARK, cal, marks)
         ans, _ = window(c, img, ["Click every checker on the board (again = remove)",
                                  "Enter = done   q = quit"], marks, toggle=True)
         if ans == "quit":
             return
         while True:
-            img = shot(b, PARK, cal)
+            img = shot(b, PARK, cal, marks)
             ans, p = window(c, img, [f"Move {len(results) + 1}: click the checker to move",
                                      "q = finish"], marks)
             if ans == "quit":
@@ -137,8 +146,11 @@ def main():
                 break
             if ans == "r":
                 continue
+            others = [m for m in marks if m != start]
+            go(b, start, others)
             drag(b, path)
-            img = shot(b, step_aside(*goal, _Aside), cal)
+            CART["at"] = tuple(goal)
+            img = shot(b, step_aside(*goal, _Aside), cal, others + [goal])
             flag = {"d": False}
             while True:
                 ans, seen = window(c, img, ["Click where the checker is now (d = a neighbour moved)",
@@ -160,7 +172,7 @@ def main():
                   + ("  NEIGHBOUR MOVED" if flag["d"] else ""))
             if flag["d"]:
                 print("  re-mark the checkers that moved:")
-                img = shot(b, PARK, cal)
+                img = shot(b, PARK, cal, marks)
                 window(c, img, ["Fix the checkers that moved (click = add/remove)",
                                 "Enter = done"], marks, toggle=True)
         b.magnet(False)
