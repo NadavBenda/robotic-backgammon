@@ -209,8 +209,11 @@ class Game:
         img = self.photo_img()
         r = vision.read(img, self.c, self.L, self.model, self.s["vision"])
         view = vision.draw(img, self.c, r)
+        import calib
+        top = calib.topdown(view, self.c, xmax=self.L.xmax, ymax=self.L.ymax)
         with self.lock:
             self.photo = cv2.imencode(".jpg", view)[1].tobytes()
+            self.photo_top = cv2.imencode(".jpg", top)[1].tobytes()
             self.photo_t = time.time()
         if self.logfile:
             n = len(self.history)
