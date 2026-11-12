@@ -44,7 +44,7 @@ def show_photo(path, img):
     if note:
         print("  (raw photo:", note + ")")
     if shown is not img:
-        cv2.imwrite(str(path.with_name(path.stem + "_top.jpg")), shown)
+        cv2.imencode(".jpg", shown)[1].tofile(str(path.with_name(path.stem + "_top.jpg")))  # works with Hebrew paths
     import ui
     ui.show("board", shown)
 

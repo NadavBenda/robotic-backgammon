@@ -2,7 +2,7 @@
 
     import vision
     model = vision.learn(img, c, L, rules.OPENING)    # once per game, board in a known position
-    r = vision.read(img, c, L, model)                  # method "scan" (default), "slots" or "hough"
+    r = vision.read(img, c, L, model, "norm")          # method "norm", "scan" (default here), "slots" or "hough"
     r.board        # 26 numbers, robot's side (like gnubg.py); r.off = (robot off, human off)
     r.checkers     # [(x_mm, y_mm, 'robot' | 'human')] measured positions
     r.warnings     # ["point 7: both colours", "robot has 14 checkers", ...]
@@ -15,7 +15,9 @@ are averaged in Lab colour -> 6 numbers. learn() collects these numbers on a kno
 (empty spots too) and keeps mean and spread per class: empty / robot / human.
 A spot is the class with the smallest normalised distance.
 
-Three ways to find the checkers (all use the same classes):
+norm (game default since 12.11): per slot, steel disc / nearby glass says if a checker is there,
+rim / nearby glass says whose; robust to the light falloff and notes on the glass.
+Three more ways to find the checkers (all use the classes above):
   slots  - judge only the slots of the layout (fast; needs checkers placed on their slots,
            good after the robot moved; a person's sloppy placement may be missed)
   scan   - slide along every row (each point is a row) in 3 mm steps and keep the peaks
@@ -70,6 +72,7 @@ def to_lab(img):
 class Model:
     mu: dict
     sd: dict
+    norm: dict = None              # thresholds of the "norm" method (learn_norm)
 
     def dist(self, f):
         """(N, 3) normalised squared distance to each class."""
@@ -83,12 +86,16 @@ class Model:
         return [CLASSES[i] for i in best], s[:, 1] - s[:, 0]
 
     def save(self, path=PATH):
-        Path(path).write_text(json.dumps({k: {"mu": list(self.mu[k]), "sd": list(self.sd[k])} for k in CLASSES}))
+        d = {k: {"mu": list(self.mu[k]), "sd": list(self.sd[k])} for k in CLASSES}
+        if self.norm:
+            d["norm"] = self.norm
+        Path(path).write_text(json.dumps(d))
 
     @classmethod
     def load(cls, path=PATH):
         d = json.loads(Path(path).read_text())
-        return cls({k: np.array(d[k]["mu"]) for k in CLASSES}, {k: np.array(d[k]["sd"]) for k in CLASSES})
+        return cls({k: np.array(d[k]["mu"]) for k in CLASSES}, {k: np.array(d[k]["sd"]) for k in CLASSES},
+                   d.get("norm"))
 
 
 def learn(img, c, L, board, extra=None):
@@ -114,7 +121,7 @@ def learn(img, c, L, board, extra=None):
             raise ValueError(f"no samples for {k}")
         mu[k] = a.mean(0)
         sd[k] = np.maximum(a.std(0), 4.0)   # floor: a few samples must not make it over-sure
-    return Model(mu, sd)
+    return Model(mu, sd, learn_norm(img, c, L, board))
 
 
 @dataclass
@@ -201,7 +208,93 @@ def find_hough(img, lab, c, L, model):
     return found
 
 
+NORM_DISC_R, NORM_RIM, NORM_BG = 6.0, (9.0, 13.5), (30.0, 45.0)
+NORM_DEFAULT = {"presence": 0.84, "colour": 0.62, "light": "human", "hidden": 0.6, "dark": True}
+
+
+def _ring(r0, r1, nr, na):
+    return np.array([(r * np.cos(a), r * np.sin(a)) for r in np.linspace(r0, r1, nr)
+                     for a in np.linspace(0, 2 * np.pi, na, endpoint=False)])
+
+
+NORM_OFFS = (_ring(0, NORM_DISC_R, 4, 16), _ring(*NORM_RIM, 3, 32), _ring(*NORM_BG, 3, 48))
+
+
+def norm_features(gray, c, xy):
+    """(N, 3): disc / glass, rim / glass, glass / whole-picture glass. xy: (N, 2) mm.
+    "glass" = the bright part (90th percentile) of a ring 30-45 mm around the spot, so
+    light falloff, glare and notes on the glass mostly cancel out."""
+    xy = np.atleast_2d(np.asarray(xy, float))
+    out = []
+    for offs in NORM_OFFS:
+        P = xy[:, None, :] + offs[None]
+        u, v = c.mm_to_px(P[..., 0], P[..., 1])
+        u = np.clip(np.rint(np.asarray(u, float)), 0, gray.shape[1] - 1).astype(int)
+        v = np.clip(np.rint(np.asarray(v, float)), 0, gray.shape[0] - 1).astype(int)
+        out.append(gray[v, u].astype(float))
+    disc, rim, bg = out
+    glass = np.maximum(np.percentile(bg, 90, axis=1), 1.0)
+    whole = max(float(np.percentile(gray, 90)), 1.0)
+    return np.stack([disc.mean(1) / glass, rim.mean(1) / glass, glass / whole], 1)
+
+
+def _gray(img):
+    return cv2.cvtColor(cv2.GaussianBlur(img, (3, 3), 0), cv2.COLOR_BGR2GRAY)
+
+
+def learn_norm(img, c, L, board):
+    """Thresholds of the "norm" method from a photo of a known board."""
+    g = _gray(img)
+    placed = L.place(board)
+    taken = [xy for xy, _ in placed.values()]
+    occ = {"robot": [], "human": []}
+    for xy, side in placed.values():
+        occ[side].append(norm_features(g, c, [xy])[0])
+    empty = [norm_features(g, c, [xy])[0] for _, _, xy in L.all_slots(depth=6)
+             if min(np.hypot(xy[0] - t[0], xy[1] - t[1]) for t in taken) > L.checker * 1.2]
+    n = dict(NORM_DEFAULT)
+    vis = lambda a: [f for f in a if f[2] > n["hidden"]]  # noqa: E731
+    rob, hum, emp = (np.array(vis(a)) for a in (occ["robot"], occ["human"], empty))
+    if len(rob) and len(hum) and len(emp):
+        occ_disc = np.concatenate([rob[:, 0], hum[:, 0]])
+        n["dark"] = bool(np.median(occ_disc) < np.median(emp[:, 0]))
+        if n["dark"]:
+            n["presence"] = float((np.percentile(occ_disc, 95) + np.percentile(emp[:, 0], 10)) / 2)
+        else:
+            n["presence"] = float((np.percentile(occ_disc, 5) + np.percentile(emp[:, 0], 90)) / 2)
+        mr, mh = float(np.median(rob[:, 1])), float(np.median(hum[:, 1]))
+        n["colour"] = (mr + mh) / 2
+        n["light"] = "human" if mh > mr else "robot"
+    return n
+
+
+def find_norm(img, c, L, model, depth=7):
+    """Judge every slot by disc / glass (is there a checker) and rim / glass (whose).
+    Slots whose glass is much darker than the picture's glass are hidden (not read)."""
+    n = model.norm if model is not None and model.norm else NORM_DEFAULT
+    g = _gray(img)
+    dark = "robot" if n["light"] == "human" else "human"
+    found, hidden = [], []
+    places = list(range(1, 25)) + ["bar_robot", "bar_human", "off_robot", "off_human"]
+    for w in places:
+        k = 15 if str(w).startswith("off") else depth
+        xy = [L.slot(w, i) for i in range(k)]
+        f = norm_features(g, c, xy)
+        for (x, y), (disc, rim, vis) in zip(xy, f):
+            if vis <= n["hidden"]:
+                hidden.append(w)
+            elif (disc < n["presence"]) == n.get("dark", True):
+                found.append((float(x), float(y), n["light"] if rim > n["colour"] else dark))
+    return found, sorted(set(map(str, hidden)))
+
+
 def read(img, c, L, model, method="scan"):
+    if method == "norm":
+        ck, hidden = find_norm(img, c, L, model)
+        r = summarize(ck, L)
+        if hidden:
+            r.warnings.append("hidden from the camera (not read): " + ", ".join(hidden))
+        return r
     lab = to_lab(img)
     if method == "slots":
         ck = find_slots(lab, c, L, model)
@@ -323,6 +416,6 @@ def export_crops(img, c, L, board, folder, size_mm=34, px=48):
         dst = np.float32([[0, 0], [px, 0], [px, px]])
         crop = cv2.warpAffine(img, cv2.getAffineTransform(src, dst), (px, px))
         (folder / k).mkdir(parents=True, exist_ok=True)
-        cv2.imwrite(str(folder / k / f"{n:05d}.png"), crop)
+        cv2.imencode(".png", crop)[1].tofile(str(folder / k / f"{n:05d}.png"))
         n += 1
     return n

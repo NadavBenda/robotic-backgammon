@@ -172,7 +172,7 @@ def run(args):
     for u, v, x, y, e in sorted(bad, key=lambda p: -p[4]):
         print(f"   over 3 mm: ({x:.0f}, {y:.0f}) mm  {e:.1f} mm")
     emap = calib_map.draw(c, img, args.xmax, args.ymax)
-    cv2.imwrite(str(OUT / "error_map.png"), emap)
+    cv2.imencode(".png", emap)[1].tofile(str(OUT / "error_map.png"))  # works with Hebrew paths
     print(f"Error map: captures/calib/error_map.png (any key closes the window)")
     ui.show("calibration error", emap)
     cv2.waitKey(0)
