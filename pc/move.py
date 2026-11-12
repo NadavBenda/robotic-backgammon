@@ -154,7 +154,9 @@ def main():
             results.append((err, flag["d"]))
             marks[marks.index(start)] = seen
             print(f"  {len(results):2d}: ({start[0]:.0f},{start[1]:.0f}) -> ({goal[0]:.0f},{goal[1]:.0f}) "
-                  f"via {len(path) - 1} line(s): landed {err:.1f} mm off"
+                  f"via {len(path) - 1} line(s): landed {err:.1f} mm off "
+                  f"(dx {seen[0] - goal[0]:+.1f}, dy {seen[1] - goal[1]:+.1f}; "
+                  f"last line heading {np.degrees(np.arctan2(path[-1][1] - path[-2][1], path[-1][0] - path[-2][0])):.0f} deg)"
                   + ("  NEIGHBOUR MOVED" if flag["d"] else ""))
             if flag["d"]:
                 print("  re-mark the checkers that moved:")

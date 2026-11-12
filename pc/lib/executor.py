@@ -36,6 +36,7 @@ class Executor:
         self.route = route
         self.drag = drag
         self.grab_s, self.overshoot = grab_s, overshoot
+        self.settle_s = paths.SETTLE_S if grab_s else 0.0   # no waiting in the simulator
         self.places = {}          # key -> [[x, y], ...] edge first; keys: 1..24, bar_*, off_*
         self.side_of = {}         # point -> 'robot' / 'human' (who holds it)
         self.warnings = []
@@ -103,7 +104,7 @@ class Executor:
         path, how = self.plan(start, goal, others)
         self.log(f"   {frm_key} -> {to_key}: {len(path) - 1} line(s), {paths.length(path):.0f} mm ({how})")
         paths.drag(self.b, path, overshoot=self._overshoot(path, others), grab_s=self.grab_s,
-                   xmax=self.L.xmax, ymax=self.L.ymax)
+                   xmax=self.L.xmax, ymax=self.L.ymax, settle_s=self.settle_s)
         self.dragged_mm += paths.length(path)
         lst.pop()
         self.places.setdefault(to_key, []).append(list(goal))
@@ -239,7 +240,7 @@ class Executor:
             others = [tuple(o[:2]) for o in cur if o is not c]
             path, how = self.plan(tuple(c[:2]), tuple(t), others)
             paths.drag(self.b, path, overshoot=self._overshoot(path, others), grab_s=self.grab_s,
-                       xmax=self.L.xmax, ymax=self.L.ymax)
+                       xmax=self.L.xmax, ymax=self.L.ymax, settle_s=self.settle_s)
             c[0], c[1] = t
             moves += 1
         if park:
