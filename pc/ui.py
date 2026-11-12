@@ -44,6 +44,24 @@ def with_bar(img, lines, color=(255, 255, 255)):
     return out
 
 
+def screen_size():
+    """(width, height) of the screen, (1920, 1080) when it cannot be asked."""
+    try:
+        import ctypes
+        u = ctypes.windll.user32
+        return u.GetSystemMetrics(0), u.GetSystemMetrics(1)
+    except Exception:
+        return 1920, 1080
+
+
+def fit_size(w, h):
+    """Window size for a w x h picture: as is, or smaller so it fits on the screen
+    (clicks still come back in picture pixels)."""
+    sw, sh = screen_size()
+    f = min(1.0, (sw - 40) / w, (sh - 110) / h)
+    return int(w * f), int(h * f)
+
+
 def show(win, view):
     try:
         visible = cv2.getWindowProperty(win, cv2.WND_PROP_VISIBLE) >= 1
@@ -51,7 +69,7 @@ def show(win, view):
         visible = False
     if not visible:
         cv2.namedWindow(win, cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO)
-        cv2.resizeWindow(win, view.shape[1], view.shape[0])
+        cv2.resizeWindow(win, *fit_size(view.shape[1], view.shape[0]))
     cv2.imshow(win, view)
 
 

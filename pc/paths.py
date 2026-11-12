@@ -9,8 +9,12 @@ The dragged checker's centre keeps CLEAR mm from every other checker's centre
 (26 = touching; 30 leaves 4 mm air, so the magnet does not pull the neighbour too).
 A neighbour that already stands closer than that to the start or the goal (a checker
 in the same point) is allowed to stay that close, but the path never gets closer to it.
-How: A* on a 5 mm grid with a small penalty for passing near checkers, then the corners
-that are not needed are cut, so most moves are 1-3 straight lines.
+Beyond that hard limit the path keeps as much room as it can (SOFT, 50 mm centre to
+centre = 24 mm air), so a checker that lags, a sloppy hand placement or a camera error of
+a few mm does not turn into a knock: a straight line is used only when it already keeps
+that room; otherwise A* on a 5 mm grid with a strong penalty for passing near checkers,
+then the corners that are not needed are cut, but never in a way that passes closer to
+a checker than the A* path did. Most moves are still 1-3 straight lines.
 """
 import heapq
 import time
@@ -19,7 +23,8 @@ import numpy as np
 
 CHECKER_MM = 26.0
 CLEAR = 30.0      # min centre distance to other checkers while dragging
-SOFT = 45.0       # prefer staying at least this far, when it costs little
+SOFT = 50.0       # prefer staying at least this far (24 mm air), worth a detour
+NEAR_W = 3.0      # how much a mm next to a checker costs over a mm in the open (x (1 + NEAR_W))
 GRID = 5.0        # mm
 XMAX, YMAX = 410.0, 420.0
 OVERSHOOT = 3.0   # mm past the target before letting go (the checker lags)
@@ -52,6 +57,21 @@ def _seg_ok(a, b, others, need):
     return len(others) == 0 or bool(np.all(_seg_dist(others, a, b) >= need))
 
 
+def _short(a, b, others, soft):
+    """How many mm the segment a-b comes closer than wanted (soft) to its worst checker."""
+    if len(others) == 0:
+        return 0.0
+    return float(max(0.0, np.max(soft - _seg_dist(others, a, b))))
+
+
+def clearance(path, others):
+    """Smallest centre distance from the path to any of the others (mm)."""
+    o = np.asarray(others, float).reshape(-1, 2)
+    if len(o) == 0:
+        return float("inf")
+    return float(min(np.min(_seg_dist(o, a, b)) for a, b in zip(path, path[1:])))
+
+
 def plan(start, goal, others=(), xmax=XMAX, ymax=YMAX, clear=CLEAR):
     """Corners of a path from start to goal (mm), first = start, last = goal.
     Raises NoPath when the checkers block every way (move one of them first)."""
@@ -62,7 +82,8 @@ def plan(start, goal, others=(), xmax=XMAX, ymax=YMAX, clear=CLEAR):
     if len(others) and np.min(np.hypot(*(others - goal).T)) < CHECKER_MM - 1:
         raise NoPath(f"goal ({goal[0]:.0f},{goal[1]:.0f}) is taken")
     need = _needs(start, goal, others, clear)
-    if _seg_ok(start, goal, others, need):
+    soft = _needs(start, goal, others, max(SOFT, clear))   # same idea, the distance we like
+    if _seg_ok(start, goal, others, need) and _short(start, goal, others, soft) == 0:
         return [tuple(start), tuple(goal)]
 
     nx, ny = int(xmax // GRID) + 1, int(ymax // GRID) + 1
@@ -70,7 +91,8 @@ def plan(start, goal, others=(), xmax=XMAX, ymax=YMAX, clear=CLEAR):
     pts = np.stack([gx, gy], -1)
     d = np.hypot(pts[..., None, 0] - others[:, 0], pts[..., None, 1] - others[:, 1])
     free = np.all(d >= need, axis=-1)
-    near = np.clip((SOFT - d) / SOFT, 0, None).sum(-1)  # 0 far from all, grows near checkers
+    # 0 far from all; 1 per checker at the hard limit; grows fast closer in
+    near = (np.clip((SOFT - d) / (SOFT - clear), 0, 1) ** 2).sum(-1)
 
     # start / goal connect to grid nodes around them by a clear straight line
     def links(p):
@@ -106,7 +128,7 @@ def plan(start, goal, others=(), xmax=XMAX, ymax=YMAX, clear=CLEAR):
                 for dj in (-1, 0, 1):
                     m = (i + di, j + dj)
                     if (di or dj) and 0 <= m[0] < nx and 0 <= m[1] < ny and free[m]:
-                        nbrs.append((m, GRID * np.hypot(di, dj) * (1 + 0.5 * near[m])))
+                        nbrs.append((m, GRID * np.hypot(di, dj) * (1 + NEAR_W * near[m])))
             if n in goal_links:
                 nbrs.append((G, float(np.hypot(*(goal - here)))))
         for m, c in nbrs:
@@ -125,10 +147,13 @@ def plan(start, goal, others=(), xmax=XMAX, ymax=YMAX, clear=CLEAR):
     chain.append(start)
     chain = chain[::-1]
     # cut corners: from each corner jump to the farthest point still reachable in a line
+    # that keeps at least the room the A* path kept there
+    short = [_short(a, b, others, soft) for a, b in zip(chain, chain[1:])]
     out, i = [chain[0]], 0
     while i < len(chain) - 1:
         j = len(chain) - 1
-        while j > i + 1 and not _seg_ok(chain[i], chain[j], others, need):
+        while j > i + 1 and not (_seg_ok(chain[i], chain[j], others, need) and
+                                 _short(chain[i], chain[j], others, soft) <= max(short[i:j]) + 0.5):
             j -= 1
         out.append(chain[j])
         i = j

@@ -261,7 +261,7 @@ bool initCamera() {
   c.pin_reset = -1;
   c.xclk_freq_hz = 20000000;
   c.pixel_format = PIXFORMAT_JPEG;
-  c.frame_size   = FRAMESIZE_XGA;  // 1024x768, כל שדה הראייה (4:3)
+  c.frame_size   = FRAMESIZE_UXGA; // 1600x1200, כל שדה הראייה (4:3); calib.json צריך כיול מחדש אחרי שינוי
   c.jpeg_quality = 12;
   c.fb_count     = 2;
   c.fb_location  = CAMERA_FB_IN_PSRAM;
@@ -399,7 +399,7 @@ void setup() {
   digitalWrite(EN_PIN, LOW);
 
   camReady = initCamera();
-  Serial.println(camReady ? "# camera OK (XGA)" : "! CAM_INIT_FAILED");
+  Serial.println(camReady ? "# camera OK (UXGA 1600x1200)" : "! CAM_INIT_FAILED");
   Serial.println("READY");
 }
 

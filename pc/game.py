@@ -202,7 +202,9 @@ class Game:
         if not self.is_sim:
             time.sleep(0.3)
         jpeg = self.b.capture()
-        return cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
+        img = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
+        self.c.check(img)   # calib.json made for another camera resolution: say so plainly
+        return img
 
     def look(self):
         """Photo + vision. Keeps an annotated copy for the page."""
@@ -210,7 +212,7 @@ class Game:
         r = vision.read(img, self.c, self.L, self.model, self.s["vision"])
         view = vision.draw(img, self.c, r)
         import calib
-        top = calib.topdown(view, self.c, xmax=self.L.xmax, ymax=self.L.ymax)
+        top = calib.view(view, self.c, xmax=self.L.xmax, ymax=self.L.ymax)[0]
         with self.lock:
             self.photo = cv2.imencode(".jpg", view)[1].tobytes()
             self.photo_top = cv2.imencode(".jpg", top)[1].tobytes()

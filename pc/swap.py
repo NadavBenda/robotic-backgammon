@@ -4,7 +4,7 @@
     py swap.py --times 6      # swap back and forth 6 times
     py swap.py --times 6 --auto   # no window when exactly 2 checkers are found
 
-Needs calib.json (py calibrate.py). Before each photo the magnet waits at --park.
+Needs calib.json (py calibrate.py); the photo is shown corrected (top view). Before each photo the magnet waits at --park.
 The window shows the checkers found: green ellipse = where the round bottom of a checker
 there should appear (from calib.json), red = the two that will swap. Enter = swap the two shown
 (or the two you clicked), click = pick a checker (click near one found, or anywhere
@@ -148,11 +148,12 @@ def main(args):
             b.move(*args.park)
             time.sleep(0.3)
             img, _ = photo(b)
-            found = detect(c, img, args.xmax, args.ymax)
+            img, f = calib.view(img, c, xmax=args.xmax, ymax=args.ymax)  # corrected top view
+            found = detect(f, img, args.xmax, args.ymax)
             if args.auto and len(found) == 2:
                 pair = [(f[2], f[3]) for f in found]
             else:
-                pair = choose(c, img, found)
+                pair = choose(f, img, found)
             if pair == "quit":
                 break
             if pair == "again":

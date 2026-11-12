@@ -33,12 +33,16 @@ def log(line):
         print("   <", line)
 
 
-def topdown_or_none(img):
-    try:
-        import calib
-        return calib.topdown(img, calib.load())
-    except (OSError, ValueError, KeyError):
-        return None   # no calib.json yet
+def show_photo(path, img):
+    """The corrected top view when there is a calibration (saved as *_top.jpg too), else raw."""
+    import calib
+    shown, note = calib.corrected(img)
+    if note:
+        print("  (raw photo:", note + ")")
+    if shown is not img:
+        cv2.imwrite(str(path.with_name(path.stem + "_top.jpg")), shown)
+    import ui
+    ui.show("board", shown)
 
 
 def run(b, line):
@@ -57,11 +61,7 @@ def run(b, line):
             path.write_bytes(x)
             img = cv2.imdecode(np.frombuffer(x, np.uint8), cv2.IMREAD_COLOR)
             print(f"photo {img.shape[1]}x{img.shape[0]}, {len(x) // 1024} KB -> {path.name}")
-            cv2.imshow("board", img)
-            flat = topdown_or_none(img)
-            if flat is not None:   # after calibration: also the straightened top view
-                cv2.imwrite(str(path.with_name(path.stem + "_top.jpg")), flat)
-                cv2.imshow("board from above (1 px = 1 mm)", flat)
+            show_photo(path, img)
             cv2.waitKey(1)
         elif not dev:
             print(x)

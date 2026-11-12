@@ -69,7 +69,7 @@ table{width:100%;border-collapse:collapse;font-size:13px}td{padding:3px 4px;bord
   <div class="card"><h1>Moves</h1><table id="hist"></table></div>
   <div class="card"><h1>Camera</h1><div class="mute">Last photo, circles = checkers found.
    Below: the same photo straightened to a view from above (1 px = 1 mm).</div>
-   <img id="photo" alt="last photo"><img id="top" class="photo2" alt="top view"></div>
+   <img id="photo" alt="top view"><img id="top" class="photo2" alt="raw photo"></div>
 </section></main>
 <script>
 const OPTS={mode:["robot_vs_human","robot_vs_robot","watch"],engine:["gnubg","simple","random"],
@@ -124,8 +124,8 @@ function render(s){S=s;if(!built){buildSettings(s.settings);built=true}
  for(const m of s.history.slice().reverse())t.append(el("tr",{},[el("td",{text:m.n}),el("td",{text:m.who}),
   el("td",{text:m.dice.join("-")}),el("td",{text:m.move}),el("td",{class:"mute",text:m.note||""})]));
  if(s.has_photo&&s.photo_t!==lastPhoto){lastPhoto=s.photo_t;const im=document.getElementById("photo");
-  im.src="/photo.jpg?t="+s.photo_t;im.style.display="block";
-  const tp=document.getElementById("top");tp.src="/top.jpg?t="+s.photo_t;tp.style.display="block"}}
+  im.src="/top.jpg?t="+s.photo_t;im.style.display="block";
+  const tp=document.getElementById("top");tp.src="/photo.jpg?t="+s.photo_t;tp.style.display="block"}}
 async function tick(){try{render(await (await fetch("/state")).json())}catch(e){}setTimeout(tick,500)}
 tick();
 </script></body></html>"""

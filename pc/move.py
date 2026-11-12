@@ -2,6 +2,8 @@
 
     py move.py
 
+Every photo is shown corrected (seen from straight above, from calib.json).
+
 1. A photo of the whole board. Click every checker on it (click again to remove one),
    Enter when done. (No automatic detection for now.)
 2. Click the checker to move, then where it should go. The planned path is drawn in blue.
@@ -84,28 +86,30 @@ def snap(p, marks):
     return min(near, key=lambda m: np.hypot(m[0] - p[0], m[1] - p[1])) if near else None
 
 
-def shot(b, at):
+def shot(b, at, c):
+    """Photo, saved raw; returned corrected to the top view."""
     b.move(*at)
     time.sleep(0.3)
     img, jpeg = photo(b)
     shot.n = getattr(shot, "n", 0) + 1
     (SHOTS / f"{shot.n:03d}.jpg").write_bytes(jpeg)
-    return img
+    return calib.view(img, c, xmax=XMAX, ymax=YMAX)[0]
 
 
 def main():
-    c = calib.load()
+    cal = calib.load()
+    c = calib.Flat(cal)   # pixel <-> mm of the corrected pictures
     SHOTS.mkdir(parents=True, exist_ok=True)
     marks, results = [], []
     with Board() as b:
         b.home_if_needed()
-        img = shot(b, PARK)
+        img = shot(b, PARK, cal)
         ans, _ = window(c, img, ["Click every checker on the board (again = remove)",
                                  "Enter = done   q = quit"], marks, toggle=True)
         if ans == "quit":
             return
         while True:
-            img = shot(b, PARK)
+            img = shot(b, PARK, cal)
             ans, p = window(c, img, [f"Move {len(results) + 1}: click the checker to move",
                                      "q = finish"], marks)
             if ans == "quit":
@@ -130,7 +134,7 @@ def main():
             if ans == "r":
                 continue
             drag(b, path)
-            img = shot(b, step_aside(*goal, _Aside))
+            img = shot(b, step_aside(*goal, _Aside), cal)
             flag = {"d": False}
             while True:
                 ans, seen = window(c, img, ["Click where the checker is now (d = a neighbour moved)",
@@ -150,7 +154,7 @@ def main():
                   + ("  NEIGHBOUR MOVED" if flag["d"] else ""))
             if flag["d"]:
                 print("  re-mark the checkers that moved:")
-                img = shot(b, PARK)
+                img = shot(b, PARK, cal)
                 window(c, img, ["Fix the checkers that moved (click = add/remove)",
                                 "Enter = done"], marks, toggle=True)
         b.magnet(False)

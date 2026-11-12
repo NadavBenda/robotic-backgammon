@@ -133,7 +133,7 @@ class Board:
         self.command(f"F {speed_mm_s:.0f} {accel_mm_s2:.0f}", timeout=2)
 
     def capture(self):
-        """One JPEG (XGA 1024x768) as bytes."""
+        """One JPEG (UXGA 1600x1200, set in board.ino) as bytes."""
         info = self.command("C", timeout=10)
         return next(x for x in info if isinstance(x, bytes))
 

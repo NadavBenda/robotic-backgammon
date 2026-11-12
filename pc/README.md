@@ -13,7 +13,7 @@ Talks to `firmware/board` over USB serial (no Wi-Fi). Needs `pip install pyseria
 - `place_opening.py`: sets up the opening with no graphics on the glass: the cart drives under each place, you put a checker above it and press Enter, the magnet pulses to centre it.
 - `move.py`: click all checkers once, then pick a checker and a goal; shows the planned path, drives it, and you click where it landed. Counts moves within 5 mm and moves that disturbed a neighbour (the 10/10 test).
 - `ui.py`: text strip above the photo, the expected checker-bottom ellipse, and `keep_open()` so a double-clicked script waits for Enter at the end (also after an error).
-- `capture.py`: press Enter to grab a JPEG (XGA 1024x768) into `captures/` and show it.
+- `capture.py`: press Enter to grab a JPEG (UXGA 1600x1200) into `captures/` and show it (corrected top view once calib.json exists).
 
 ```python
 from board import Board
