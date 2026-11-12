@@ -1,6 +1,6 @@
 """The robot calibrates the camera by itself.
 
-    py calibrate.py                  # measure a 6x6 grid and write calib.json
+    py calibrate.py                  # measure a 6x6 grid from 0,0 to the far limits and write calib.json
     py calibrate.py --n 5 --xmax 410 --ymax 420
     py calibrate.py test             # click a spot in the photo -> the magnet goes there
 
@@ -206,7 +206,7 @@ if __name__ == "__main__":
     ap.add_argument("--n", type=int, default=6, help="grid size n x n")
     ap.add_argument("--xmax", type=float, default=410)
     ap.add_argument("--ymax", type=float, default=420)
-    ap.add_argument("--margin", type=float, default=15, help="mm from each edge")
+    ap.add_argument("--margin", type=float, default=0, help="mm from each edge (0 = the grid reaches the limits)")
     ap.add_argument("--away", type=float, default=80,
                     help="mm the magnet steps aside in each axis before a photo")
     ap.add_argument("--park", type=lambda t: tuple(map(float, t.split(","))), default=(410, 420),
