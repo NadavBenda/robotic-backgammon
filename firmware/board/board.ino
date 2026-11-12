@@ -15,7 +15,9 @@
  *                  (allowed with the magnet on, but warns "! CAPTURE_WITH_MAG_ON")
  *   P <v> <a>      drag profile (magnet on): top speed mm/s, accel mm/s^2, default 180 / 800
  *   F <v> <a>      free profile (magnet off), default 150 / 1200; starts at 40 mm/s so the
- *                  carriage leaves a checker sharply. Both up to 600 / 5000, kept until reset  ERR ARGS
+ *                  carriage leaves a checker sharply; the first move after M 0 starts at 50 mm/s
+ *                  and speeds up at 3000 mm/s^2 (~3 mm) to tear away from the checker.
+ *                  Both up to 600 / 5000, kept until reset  ERR ARGS
  *   ?              "POS <x> <y> HOMED <0/1> MAG <0/1> HEAT <%> CAM <0/1> DRAG_V <v> DRAG_A <a> FREE_V <v> FREE_A <a>",
  *                  then DONE
  *
@@ -79,6 +81,11 @@ const long MAX_TRAVEL     = 25000;
 const float START_SPEED_STEPS = 800.0;   // 20 מ"מ/ש' (עם אבן)
 const float FREE_START_STEPS  = 1600.0;  // 40 מ"מ/ש' (בלי אבן: יציאה חדה מתחת לאבן שהונחה)
 const int   RELEASE_MS        = 500;     // אחרי M 0: הסליל נפרק והאבן משתחררת לפני התנועה הבאה (12.11: 250 לא הספיק)
+// יציאה חדה מתחת לאבן אחרי M 0: התנועה הראשונה מתחילה מהר יותר ומאיצה חזק (~3 מ"מ עד המהירות),
+// כך שהחיכוך והאינרציה של האבן מנצחים את המשיכה שנשארת בין המגנט שבאבן לליבת הברזל. הבלימה רגילה.
+const float KICK_START_STEPS  = 2000.0;  // 50 מ"מ/ש' (רגיל 40)
+const float KICK_ACCEL_STEPS  = 3000.0 * STEPS_PER_MM;  // 3000 מ"מ/ש² (רגיל 1200)
+bool justReleased = false;               // M 0 כיבה מגנט דולק; מתאפס בתנועה הבאה
 const int   GRAB_MS           = 300;     // אחרי M 1: האבן מתמרכזת מעל המגנט לפני התנועה
 // פרופיל חופשי (א"מ כבוי). משתנה בפקודה F
 float freeMaxSteps   = 150.0 * STEPS_PER_MM;   // 150 מ"מ/ש'
@@ -171,13 +178,23 @@ const char* moveTrapezoidal(long dX, long dY) {
   const bool  drag  = mag.isOn();
   const float vMax  = drag ? dragMaxSteps : freeMaxSteps;
   const float accel = drag ? dragAccelSteps : freeAccelSteps;
+  const bool  kick  = !drag && justReleased;   // התנועה הראשונה אחרי שחרור אבן
+  justReleased = false;
   const float v0    = min(drag ? START_SPEED_STEPS : FREE_START_STEPS, vMax);
-  long accelSteps = lround(((vMax * vMax) - (v0 * v0)) / (2.0 * accel));
+  const float vs    = kick ? min(KICK_START_STEPS, vMax) : v0;       // מהירות התחלה
+  const float upA   = kick ? max(KICK_ACCEL_STEPS, accel) : accel;   // תאוצה בעלייה
+  long accelSteps = lround(((vMax * vMax) - (vs * vs)) / (2.0 * upA));
+  long decelSteps = lround(((vMax * vMax) - (v0 * v0)) / (2.0 * accel));
   if (accelSteps < 1) accelSteps = 1;
-  if (accelSteps * 2 > totalSteps) accelSteps = totalSteps / 2;
-  long decelStart = totalSteps - accelSteps;
+  if (decelSteps < 1) decelSteps = 1;
+  if (accelSteps + decelSteps > totalSteps) {   // תנועה קצרה: לא מגיעים ל-vMax
+    long a2 = lround(totalSteps * (double)accelSteps / (accelSteps + decelSteps));
+    decelSteps = totalSteps - a2;
+    accelSteps = a2;
+  }
+  long decelStart = totalSteps - decelSteps;
 
-  float currentSpeed = v0;
+  float currentSpeed = vs;
   long countA = 0, countB = 0;
   long doneX = 0, doneY = 0;  // מיקום בפועל, למקרה של עצירה באמצע
 
@@ -198,12 +215,13 @@ const char* moveTrapezoidal(long dX, long dY) {
     }
 
     if (i < accelSteps) {
-      currentSpeed = sqrt((v0 * v0) + (2.0 * accel * i));
+      currentSpeed = sqrt((vs * vs) + (2.0 * upA * i));
       if (currentSpeed > vMax) currentSpeed = vMax;
     } else if (i >= decelStart) {
       long remaining = totalSteps - i;
       currentSpeed = sqrt((v0 * v0) + (2.0 * accel * remaining));
       if (currentSpeed < v0) currentSpeed = v0;
+      if (currentSpeed > vMax) currentSpeed = vMax;
     } else {
       currentSpeed = vMax;
     }
@@ -343,11 +361,13 @@ void execute(String cmd) {
       break;
     case 'M':
       if (cmd.substring(1).toInt() != 0) {
+        justReleased = false;
         bool ok = mag.on();
         if (ok) delay(GRAB_MS);
         Serial.printf("# magnet heat %d%%\n", mag.heatPercent());
         reply(ok ? nullptr : "MAG_HOT");
       } else {
+        justReleased = mag.isOn();
         mag.off();
         delay(RELEASE_MS);
         reply(nullptr);

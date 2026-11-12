@@ -10,11 +10,12 @@ A window shows the guess (green): the ellipse is where the round bottom of the c
 should appear at that spot (from calib.json if there is one, then from the points measured
 so far). Click so the ellipse sits on the bottom of the checker. Enter = accept, s = skip
 this point, q = stop.
-Before each photo the magnet steps aside by --away mm in both axes (towards larger
-coordinates, or smaller near the far edge) so the carriage and rail do not hide the checker.
+Before each photo the cart goes to the game's park spot (middle of the board), or, for a
+point near that spot, steps aside by 80 mm, so the carriage and rail do not hide the checker.
 After the first two rows the guess uses the points so far, so most of
 the time you only press Enter.
-Photos are saved in captures/calib/.
+Photos are saved in captures/calib/. At the end a map of the error per point is shown and
+saved (captures/calib/error_map.png): green under 2 mm, orange 2-3, red over 3.
 """
 import sys  # noqa: E402
 from pathlib import Path as _P
@@ -29,6 +30,7 @@ import cv2
 import numpy as np
 
 import calib
+import calib_map
 import ui
 from board import Board, BoardError
 from helpers import ask, find_circles, magnet_on, photo, step_aside
@@ -87,8 +89,19 @@ def saved_maps():
 
 
 
+def aside(x, y, args, park):
+    """Where the cart waits for the photo of a checker at (x, y): the park spot of the game
+    (middle of the board) when the checker is far from it, else a step aside. On the far
+    rows a step aside left the cart and its rail between the camera and the checker."""
+    if np.hypot(x - park[0], y - park[1]) > 2 * args.away:
+        return park
+    return step_aside(x, y, args)
+
+
 def run(args):
     OUT.mkdir(parents=True, exist_ok=True)
+    from layout import Layout
+    park = Layout.load().park()
     pts = grid(args.n, args.xmax, args.ymax, args.margin)
     px, mm = [], []
     old = saved_maps()
@@ -100,7 +113,7 @@ def run(args):
             magnet_on(b)
             b.move(x, y)
             b.magnet(False)
-            b.move(*step_aside(x, y, args))  # so the carriage does not hide the checker
+            b.move(*aside(x, y, args, park))  # so the carriage does not hide the checker
             time.sleep(0.3)
             img, jpeg = photo(b)
             b.move(x, y)  # back under the checker (magnet off), the next loop turns it on
@@ -136,10 +149,28 @@ def run(args):
 
     if len(px) < 12:
         sys.exit(f"Only {len(px)} points, need at least 12 for the fit.")
-    c = calib.fit(px, mm, size=(img.shape[1], img.shape[0]))
+    size = (img.shape[1], img.shape[0])
+    c = calib.fit(px, mm, size=size)
+    # a point far worse than the rest (checker moved, wrong click) spoils its whole area: drop it
+    errs = np.array([p[4] for p in c.points])
+    out = [i for i, e in enumerate(errs) if e > max(calib_map.LIMIT_MM, 3 * np.median(errs))]
+    if out and len(px) - len(out) >= 12:
+        for i in out:
+            print(f"   dropped ({mm[i][0]:.0f}, {mm[i][1]:.0f}) mm: {errs[i]:.1f} mm off, far worse than the rest")
+        keep = [i for i in range(len(px)) if i not in out]
+        c = calib.fit([px[i] for i in keep], [mm[i] for i in keep], size=size)
     c.save()
     print(f"\nSaved {calib.PATH.name}: {len(px)} points, error {c.rms_mm:.1f} mm RMS, worst {c.max_mm:.1f} mm")
     print("Goal: worst under 3 mm. Check it with:  py calibrate.py test")
+    bad = [p for p in c.points if p[4] > calib_map.LIMIT_MM]
+    for u, v, x, y, e in sorted(bad, key=lambda p: -p[4]):
+        print(f"   over 3 mm: ({x:.0f}, {y:.0f}) mm  {e:.1f} mm")
+    emap = calib_map.draw(c, img, args.xmax, args.ymax)
+    cv2.imwrite(str(OUT / "error_map.png"), emap)
+    print(f"Error map: captures/calib/error_map.png (any key closes the window)")
+    ui.show("calibration error", emap)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
 
 
 def test(args):
