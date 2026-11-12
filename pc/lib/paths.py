@@ -77,7 +77,7 @@ def clearance(path, others):
     return float(min(np.min(_seg_dist(o, a, b)) for a, b in zip(path, path[1:])))
 
 
-def plan(start, goal, others=(), xmax=XMAX, ymax=YMAX, clear=CLEAR):
+def plan(start, goal, others=(), xmax=XMAX, ymax=YMAX, clear=CLEAR, soft_mm=SOFT):
     """Corners of a path from start to goal (mm), first = start, last = goal.
     Raises NoPath when the checkers block every way (move one of them first)."""
     start, goal = np.asarray(start, float), np.asarray(goal, float)
@@ -87,7 +87,7 @@ def plan(start, goal, others=(), xmax=XMAX, ymax=YMAX, clear=CLEAR):
     if len(others) and np.min(np.hypot(*(others - goal).T)) < CHECKER_MM - 1:
         raise NoPath(f"goal ({goal[0]:.0f},{goal[1]:.0f}) is taken")
     need = _needs(start, goal, others, clear)
-    soft = _needs(start, goal, others, max(SOFT, clear))   # same idea, the distance we like
+    soft = _needs(start, goal, others, max(soft_mm, clear))   # same idea, the distance we like
     if _seg_ok(start, goal, others, need) and _short(start, goal, others, soft) == 0:
         return [tuple(start), tuple(goal)]
 
@@ -97,7 +97,8 @@ def plan(start, goal, others=(), xmax=XMAX, ymax=YMAX, clear=CLEAR):
     d = np.hypot(pts[..., None, 0] - others[:, 0], pts[..., None, 1] - others[:, 1])
     free = np.all(d >= need, axis=-1)
     # 0 far from all; 1 per checker at the hard limit; grows fast closer in
-    near = (np.clip((SOFT - d) / (SOFT - clear), 0, 1) ** 2).sum(-1)
+    near = (np.clip((soft_mm - d) / (soft_mm - clear), 0, 1) ** 2).sum(-1) if soft_mm > clear \
+        else np.zeros(d.shape[:-1])
 
     # start / goal connect to grid nodes around them by a clear straight line
     def links(p):
@@ -163,6 +164,34 @@ def plan(start, goal, others=(), xmax=XMAX, ymax=YMAX, clear=CLEAR):
         out.append(chain[j])
         i = j
     return round_corners([(float(p[0]), float(p[1])) for p in out], others, need)
+
+
+FREE_CLEAR = 22.0   # magnet off: keep the cart this far from checker centres (not right under one)
+
+
+def travel(b, frm, to, others=(), xmax=XMAX, ymax=YMAX):
+    """Move the cart with the magnet OFF from frm to `to` without passing right under other
+    checkers: the steel in a checker is pulled a little by the magnet's iron core even when
+    it is off, so a checker the cart passes under can shift. Checkers at frm or `to` (the one
+    just let go, the one about to be picked up) do not count. When no way around exists
+    (crowded board) it tries a tighter clearance, then goes straight. Returns the corners."""
+    o = np.asarray(others, float).reshape(-1, 2)
+    if frm is None:
+        b.move(*to)
+        return [tuple(to)]
+    f, t = np.asarray(frm, float), np.asarray(to, float)
+    if len(o):
+        o = o[(np.hypot(*(o - f).T) > 13) & (np.hypot(*(o - t).T) > 13)]
+    path = [tuple(f), tuple(t)]
+    for clear in (FREE_CLEAR, 15.0):
+        try:
+            path = plan(f, t, o, xmax, ymax, clear=clear, soft_mm=clear)
+            break
+        except NoPath:
+            continue
+    for p in path[1:]:
+        b.move(*p)
+    return path
 
 
 def round_corners(path, others=(), need=None, r=ROUND_MM, n=ROUND_N, min_deg=ROUND_MIN_DEG):

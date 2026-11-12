@@ -19,8 +19,11 @@ from sim import SimBoard  # noqa: E402
 paths.GRAB_S = 0
 
 
-def photo(b, L):
-    b.move(*L.park())
+def photo(b, L, ex=None):
+    if ex is not None:
+        ex.park()          # like the game: magnet off, around the checkers
+    else:
+        b.move(*L.park())
     return cv2.imdecode(np.frombuffer(b.capture(), np.uint8), 1)
 
 
@@ -55,7 +58,7 @@ def play_game(seed):
         steps = rules.best_move_simple(board, d)
         ex.play(steps, side)
         nb = [nb for s, nb in rules.legal_moves(board, d) if s == steps][0]
-        r = vision.read(photo(b, L), b.calib, L, m)
+        r = vision.read(photo(b, L, ex), b.calib, L, m)
         exp = nb if side == "robot" else rules.flip(nb)
         if r.board != exp:
             bad += 1

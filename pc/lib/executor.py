@@ -41,6 +41,7 @@ class Executor:
         self.side_of = {}         # point -> 'robot' / 'human' (who holds it)
         self.warnings = []
         self.dragged_mm = 0.0
+        self.cart = None          # where the magnet is (None = unknown: go straight)
         if drag and hasattr(b, "drag_profile"):
             b.drag_profile(*drag)
 
@@ -103,15 +104,28 @@ class Executor:
         others = [p for p in self.all_xy() if np.hypot(p[0] - start[0], p[1] - start[1]) > 1]
         path, how = self.plan(start, goal, others)
         self.log(f"   {frm_key} -> {to_key}: {len(path) - 1} line(s), {paths.length(path):.0f} mm ({how})")
+        self.goto(start, others)
         paths.drag(self.b, path, overshoot=self._overshoot(path, others), grab_s=self.grab_s,
                    xmax=self.L.xmax, ymax=self.L.ymax, settle_s=self.settle_s)
         self.dragged_mm += paths.length(path)
+        self.cart = tuple(goal)
         lst.pop()
         self.places.setdefault(to_key, []).append(list(goal))
         if isinstance(to_key, int) and side:
             self.side_of[to_key] = side
         if isinstance(frm_key, int) and not lst:
             self.side_of.pop(frm_key, None)
+
+    def goto(self, xy, others=None):
+        """Magnet off: drive to xy around the checkers (paths.travel)."""
+        if others is None:
+            others = self.all_xy()
+        paths.travel(self.b, self.cart, xy, others, self.L.xmax, self.L.ymax)
+        self.cart = tuple(xy)
+
+    def park(self, xy=None):
+        """To the photo spot, around the checkers."""
+        self.goto(xy or self.L.park())
 
     def _overshoot(self, path, others):
         """No overshoot when it would push the checker into a neighbour ahead of it."""
@@ -239,12 +253,15 @@ class Executor:
             _, c, t = best
             others = [tuple(o[:2]) for o in cur if o is not c]
             path, how = self.plan(tuple(c[:2]), tuple(t), others)
+            self.goto(tuple(c[:2]), others)
             paths.drag(self.b, path, overshoot=self._overshoot(path, others), grab_s=self.grab_s,
                        xmax=self.L.xmax, ymax=self.L.ymax, settle_s=self.settle_s)
             c[0], c[1] = t
+            self.cart = tuple(t)
             moves += 1
         if park:
-            self.b.move(*park)
+            self.set_from_board(board)
+            self.park(park)
         self.set_from_board(board)
         return moves
 

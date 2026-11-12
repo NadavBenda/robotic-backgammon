@@ -202,7 +202,10 @@ class Game:
                            grab_s=0.0 if self.is_sim else 0.3)
 
     def photo_img(self):
-        self.b.move(*self.L.park())
+        if getattr(self, "ex", None) is not None:
+            self.ex.park()   # around the checkers, magnet off
+        else:
+            self.b.move(*self.L.park())
         if not self.is_sim:
             time.sleep(0.3)
         from helpers import photo
