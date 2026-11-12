@@ -15,7 +15,7 @@ a few mm does not turn into a knock: a straight line is used only when it alread
 that room; otherwise A* on a 5 mm grid with a strong penalty for passing near checkers,
 then the corners that are not needed are cut, but never in a way that passes closer to
 a checker than the A* path did. Most moves are still 1-3 straight lines, and each corner
-between them is rounded into a short arc (round_corners) so the checker turns gradually.
+between them that turns more than 30 deg is cut by one short line (round_corners).
 """
 import heapq
 import time
@@ -30,8 +30,9 @@ GRID = 5.0        # mm
 XMAX, YMAX = 410.0, 420.0
 OVERSHOOT = 3.0   # mm past the target before letting go (the checker lags)
 GRAB_S = 0.3      # s after the magnet turns on
-ROUND_MM = 15.0   # each corner becomes a short arc that starts this far before it
-ROUND_N = 3       # points on that arc (so 4 short lines instead of one sharp turn)
+ROUND_MM = 10.0   # a sharp corner is cut by one short line from this far before it to this far after
+ROUND_N = 0       # extra points between those two (0 = a plain cut; each point is a brief stop)
+ROUND_MIN_DEG = 30.0  # corners that turn less than this are left alone
 
 
 class NoPath(RuntimeError):
@@ -163,10 +164,11 @@ def plan(start, goal, others=(), xmax=XMAX, ymax=YMAX, clear=CLEAR):
     return round_corners([(float(p[0]), float(p[1])) for p in out], others, need)
 
 
-def round_corners(path, others=(), need=None, r=ROUND_MM, n=ROUND_N):
-    """Replace each corner by a short arc (quadratic curve from r mm before the corner to
-    r mm after it, n points), so the checker turns gradually instead of all at once.
-    A corner whose arc would come closer to a checker than the path may (need) stays sharp."""
+def round_corners(path, others=(), need=None, r=ROUND_MM, n=ROUND_N, min_deg=ROUND_MIN_DEG):
+    """Cut each sharp corner (turn over min_deg) with one short line from r mm before it to
+    r mm after it (n > 0: a curve through n more points), so the checker turns in two
+    smaller steps. The firmware stops at every point, so this is kept to one extra point.
+    A cut that would come closer to a checker than the path may (need) is not made."""
     if len(path) < 3:
         return list(path)
     o = np.asarray(others, float).reshape(-1, 2)
@@ -176,7 +178,8 @@ def round_corners(path, others=(), need=None, r=ROUND_MM, n=ROUND_N):
         a, c, b = out[-1], P[k], P[k + 1]
         la, lb = np.hypot(*(c - a)), np.hypot(*(b - c))
         rr = min(r, la / 2, lb / 2)
-        if rr < 2:
+        cosang = float(np.dot(c - a, b - c) / max(la * lb, 1e-9))
+        if rr < 4 or np.degrees(np.arccos(np.clip(cosang, -1, 1))) < min_deg:
             out.append(c)
             continue
         p0 = c + (a - c) / la * rr
