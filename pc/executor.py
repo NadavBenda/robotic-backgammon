@@ -1,0 +1,264 @@
+"""Turn a move (list of Step) into magnet drags on the real board, and check the result.
+
+    from executor import Executor
+    ex = Executor(b, L)                       # b = board.Board or sim.SimBoard
+    ex.set_from_board(rules.OPENING)          # where the checkers are: nominal slots ...
+    ex.set_from_reading(reading)              # ... or measured by vision (a person's sloppy placement)
+    ex.play(steps, side="robot")              # drags; a hit goes to the bar first
+    ex.arrange(rules.OPENING)                 # set up a position from whatever is on the board
+
+For each Step:
+  1. hit: the single opposing checker on `to` goes to its bar first.
+  2. the top checker of `frm` (the one nearest the lane) goes to the next free slot of `to`
+     (a bear-off tray when to == OFF).
+Path, first that works ("route" setting, the rest are the fallbacks, in this order):
+  astar  - paths.plan: A* around every other checker, 30 mm clear (default)
+  tight  - the same with 27 mm (rows are only 29 mm apart, so a long row is tight)
+  lane   - out along its own row to the middle lane, along the lane, into the target row
+           (the layout keeps the lane free, so this almost never fails)
+  straight - a straight line, may push a neighbour (logged as a warning)
+"""
+import time
+
+import numpy as np
+
+import paths
+from gnubg import BAR, OFF
+
+DRAG = (160, 800)      # mm/s, mm/s2 with a checker; drag_test.py: 160/800 held (12.11)
+ROUTES = ("astar", "tight", "lane", "straight")
+
+
+class Executor:
+    def __init__(self, b, L, route="astar", drag=DRAG, log=print, grab_s=paths.GRAB_S,
+                 overshoot=paths.OVERSHOOT):
+        self.b, self.L, self.log = b, L, log
+        self.route = route
+        self.drag = drag
+        self.grab_s, self.overshoot = grab_s, overshoot
+        self.places = {}          # key -> [[x, y], ...] edge first; keys: 1..24, bar_*, off_*
+        self.side_of = {}         # point -> 'robot' / 'human' (who holds it)
+        self.warnings = []
+        self.dragged_mm = 0.0
+        if drag and hasattr(b, "drag_profile"):
+            b.drag_profile(*drag)
+
+    # -- where the checkers are --------------------------------------------
+    def set_from_board(self, board):
+        self.places, self.side_of = {}, {}
+        for (where, i), (xy, side) in sorted(self.L.place(board).items(), key=lambda kv: (str(kv[0][0]), kv[0][1])):
+            self.places.setdefault(where, []).append(list(xy))
+            if isinstance(where, int):
+                self.side_of[where] = side
+
+    def set_from_reading(self, r):
+        """Use measured positions (vision.Reading.checkers)."""
+        self.places, self.side_of = {}, {}
+        for x, y, side in r.checkers:
+            k = self.L.nearest(x, y)
+            if k is None:
+                self.warnings.append(f"checker at ({x:.0f},{y:.0f}) is not on any point, ignored")
+                continue
+            kind, key = k
+            where = key if kind == "point" else f"{kind}_{side}" if kind != "point" else key
+            if kind == "point":
+                self.side_of[key] = side
+            self.places.setdefault(where, []).append([x, y])
+        for where, lst in self.places.items():   # edge first
+            e = self.L.slot(where, 0)
+            lst.sort(key=lambda p: np.hypot(p[0] - e[0], p[1] - e[1]))
+
+    def all_xy(self):
+        return [tuple(p) for lst in self.places.values() for p in lst]
+
+    # -- moves --------------------------------------------------------------
+    def _key(self, p, side):
+        """Step point (that side's numbering) -> place key."""
+        if p == BAR:
+            return f"bar_{side}"
+        if p == OFF:
+            return f"off_{side}"
+        return p if side == "robot" else 25 - p
+
+    def _free_slot(self, where):
+        lst = self.places.get(where, [])
+        others = self.all_xy()
+        for i in range(len(lst), len(lst) + 8):
+            xy = self.L.slot(where, i)
+            if all(np.hypot(xy[0] - o[0], xy[1] - o[1]) >= self.L.checker - 2 for o in others):
+                return xy
+        return self.L.slot(where, len(lst))
+
+    def move_checker(self, frm_key, to_key, side=None):
+        lst = self.places.get(frm_key)
+        if not lst:
+            raise RuntimeError(f"no checker on {frm_key}")
+        # the top checker: the one nearest the lane (a person may have shuffled the order)
+        mid = self.L.xmax / 2
+        top = min(range(len(lst)), key=lambda i: abs(self.L.from_magnet(*lst[i])[0] - mid))
+        lst.append(lst.pop(top))
+        start = tuple(lst[-1])
+        goal = self._free_slot(to_key)
+        others = [p for p in self.all_xy() if np.hypot(p[0] - start[0], p[1] - start[1]) > 1]
+        path, how = self.plan(start, goal, others)
+        self.log(f"   {frm_key} -> {to_key}: {len(path) - 1} line(s), {paths.length(path):.0f} mm ({how})")
+        paths.drag(self.b, path, overshoot=self._overshoot(path, others), grab_s=self.grab_s,
+                   xmax=self.L.xmax, ymax=self.L.ymax)
+        self.dragged_mm += paths.length(path)
+        lst.pop()
+        self.places.setdefault(to_key, []).append(list(goal))
+        if isinstance(to_key, int) and side:
+            self.side_of[to_key] = side
+        if isinstance(frm_key, int) and not lst:
+            self.side_of.pop(frm_key, None)
+
+    def _overshoot(self, path, others):
+        """No overshoot when it would push the checker into a neighbour ahead of it."""
+        a, z = np.asarray(path[-2], float), np.asarray(path[-1], float)
+        n = np.hypot(*(z - a))
+        if n < 1 or not len(others):
+            return self.overshoot
+        end = z + (z - a) / n * self.overshoot
+        o = np.asarray(others, float).reshape(-1, 2)
+        if np.min(np.hypot(*(o - end).T)) < self.L.checker + 0.5:
+            return 0.0
+        return self.overshoot
+
+    def plan(self, start, goal, others):
+        order = ROUTES[ROUTES.index(self.route):] if self.route in ROUTES else ROUTES
+        for how in order:
+            try:
+                if how == "astar":
+                    return paths.plan(start, goal, others, self.L.xmax, self.L.ymax), how
+                if how == "tight":
+                    return paths.plan(start, goal, others, self.L.xmax, self.L.ymax, clear=27.0), how
+                if how == "lane":
+                    return self.lane_path(start, goal, others), how
+            except paths.NoPath as e:
+                self.last_nopath = str(e)
+                continue
+        self.warnings.append(f"straight drag ({start[0]:.0f},{start[1]:.0f}) -> ({goal[0]:.0f},{goal[1]:.0f}) "
+                             f"may push a neighbour ({getattr(self, 'last_nopath', '')})")
+        return [start, goal], "straight"
+
+    def lane_path(self, start, goal, others):
+        """Row -> middle lane -> row (picture frame), each leg checked for clearance.
+        The lane x is chosen where it has the most room (a point with 8 checkers
+        reaches into the lane)."""
+        L = self.L
+        (sx, sy), (gx, gy) = L.from_magnet(*start), L.from_magnet(*goal)
+        o = np.asarray(others, float).reshape(-1, 2)
+        # a touch (1.5 mm) is accepted here: rows are only 29 mm apart
+        need = paths._needs(np.asarray(start, float), np.asarray(goal, float), o, L.checker - 1.5)
+        lo, hi = L.lane_x()
+        mid = (lo + hi) / 2
+        best, why = None, "lane blocked"
+        for lane in sorted(np.arange(lo - 15, hi + 15.1, 3.0), key=lambda x: abs(x - mid)):
+            pts = [(sx, sy), (lane, sy), (lane, gy), (gx, gy)]
+            mag = [L.to_magnet(*p) for p in pts]
+            out = [mag[0]]
+            for p in mag[1:]:
+                if np.hypot(p[0] - out[-1][0], p[1] - out[-1][1]) > 0.5:
+                    out.append(p)
+            if len(out) < 2:
+                out.append(mag[-1])
+            if len(o) == 0:
+                return out
+            margin = min(float(np.min(paths._seg_dist(o, a, z) - need)) for a, z in zip(out, out[1:]))
+            if margin >= 0:
+                return out
+            if best is None or margin > best:
+                best = margin
+                d = [paths._seg_dist(o, a, z) - need for a, z in zip(out, out[1:])]
+                leg = int(np.argmin([x.min() for x in d]))
+                k = int(np.argmin(d[leg]))
+                a, z = out[leg], out[leg + 1]
+                why = (f"lane blocked by ({o[k][0]:.0f},{o[k][1]:.0f}) on "
+                       f"({a[0]:.0f},{a[1]:.0f})->({z[0]:.0f},{z[1]:.0f})")
+        raise paths.NoPath(why)
+
+    def play(self, steps, side="robot"):
+        """Carry out one move. side: whose move it is (its numbering in the steps)."""
+        opp = "human" if side == "robot" else "robot"
+        t0 = time.time()
+        for st in steps:
+            to_key = self._key(st.to, side)
+            if st.hit:
+                self.move_checker(to_key, f"bar_{opp}", opp)
+            self.move_checker(self._key(st.frm, side), to_key, side)
+        return time.time() - t0
+
+    # -- set up a position -------------------------------------------------
+    def arrange(self, board, park=None, max_moves=80):
+        """Move the checkers that are not where `board` wants them. Uses the current
+        positions (set_from_reading first). Greedy: each wrong checker goes to the
+        nearest free target of its colour; a target taken by a wrong checker is freed
+        first. Returns the number of drags."""
+        targets = {"robot": [], "human": []}
+        for (where, i), (xy, side) in self.L.place(board).items():
+            targets[side].append(tuple(xy))
+        current = []   # (x, y, side) from places
+        for where, lst in self.places.items():
+            side = (self.side_of.get(where) if isinstance(where, int) else where.split("_")[1])
+            current += [(p[0], p[1], side) for p in lst]
+        if sum(1 for c in current if c[2] == "robot") < 15 or sum(1 for c in current if c[2] == "human") < 15:
+            self.warnings.append("fewer than 15 checkers of a side seen; arranging what is there")
+        moves = 0
+        cur = [list(c) for c in current]
+        ok = lambda c, t: np.hypot(c[0] - t[0], c[1] - t[1]) < 6
+        for _ in range(max_moves):
+            # which targets are already done
+            done, todo = set(), []
+            for c in cur:
+                hit = next((t for t in targets[c[2]] if t not in done and ok(c, t)), None)
+                if hit:
+                    done.add(hit)
+                else:
+                    todo.append(c)
+            if not todo:
+                break
+            free = {s: [t for t in targets[s] if t not in done] for s in targets}
+            # a target nobody (wrong) stands on, nearest first
+            best = None
+            for c in todo:
+                for t in free[c[2]]:
+                    if any(np.hypot(o[0] - t[0], o[1] - t[1]) < self.L.checker - 2 for o in cur if o is not c):
+                        continue
+                    d = np.hypot(c[0] - t[0], c[1] - t[1])
+                    if best is None or d < best[0]:
+                        best = (d, c, t)
+            if best is None:   # every free target is covered by a wrong checker: move one to the lane
+                c = todo[0]
+                lane = sum(self.L.lane_x()) / 2
+                t = self.L.to_magnet(lane, self.L._row_y(3 + moves % 7))
+                best = (0, c, t)
+            _, c, t = best
+            others = [tuple(o[:2]) for o in cur if o is not c]
+            path, how = self.plan(tuple(c[:2]), tuple(t), others)
+            paths.drag(self.b, path, overshoot=self._overshoot(path, others), grab_s=self.grab_s,
+                       xmax=self.L.xmax, ymax=self.L.ymax)
+            c[0], c[1] = t
+            moves += 1
+        if park:
+            self.b.move(*park)
+        self.set_from_board(board)
+        return moves
+
+
+def expected_after(board, steps):
+    """Board after the robot plays steps (robot's side), from rules."""
+    from rules import apply_step
+    b = list(board)
+    for st in steps:
+        frm = BAR if st.frm == BAR else st.frm
+        die = (25 if frm == BAR else frm) - (st.to if st.to != OFF else 0)
+        r = apply_step(b, frm, die)
+        if r is None and st.to == OFF:   # bear off with a higher die
+            for d in range(die + 1, 7):
+                r = apply_step(b, frm, d)
+                if r:
+                    break
+        if r is None:
+            raise ValueError(f"step {st} is not legal on this board")
+        b = r[0]
+    return b
