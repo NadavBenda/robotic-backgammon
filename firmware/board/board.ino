@@ -300,7 +300,19 @@ const char* captureToSerial() {
   // זורקים פריים אחד, כדי שהתמונה תצולם אחרי הפקודה ולא לפניה (למשל באמצע תנועה)
   camera_fb_t* fb = esp_camera_fb_get();
   if (fb) esp_camera_fb_return(fb);
-  fb = esp_camera_fb_get();
+  // פריים קטוע (נראה כפסים אנכיים) קורה מדי פעם ב-UXGA: JPEG שלם מתחיל ב-FFD8 ונגמר ב-FFD9
+  for (int tries = 0; tries < 4; tries++) {
+    fb = esp_camera_fb_get();
+    if (!fb) continue;
+    bool ok = fb->len > 10000 && fb->buf[0] == 0xFF && fb->buf[1] == 0xD8;
+    bool end = false;
+    for (size_t i = fb->len - 1; ok && i > fb->len - 32 && i > 0; i--)
+      if (fb->buf[i - 1] == 0xFF && fb->buf[i] == 0xD9) { end = true; break; }
+    if (ok && end) break;
+    Serial.printf("# bad frame (%u bytes), again\n", (unsigned)fb->len);
+    esp_camera_fb_return(fb);
+    fb = nullptr;
+  }
   if (!fb) return "CAM";
   Serial.printf("# frame %ux%u\n", (unsigned)fb->width, (unsigned)fb->height);
   Serial.printf("IMG %u\n", (unsigned)fb->len);

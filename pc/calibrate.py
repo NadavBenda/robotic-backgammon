@@ -9,7 +9,7 @@ turns off, a photo is taken and the checker is found in it (dark ring, Hough cir
 A window shows the guess (green): the ellipse is where the round bottom of the checker
 should appear at that spot (from calib.json if there is one, then from the points measured
 so far). Click so the ellipse sits on the bottom of the checker. Enter = accept, s = skip
-this point, q = stop.
+this point, r = take the photo again, q = stop. A broken photo (stripes) is retaken by itself.
 Before each photo the cart goes to the game's park spot (middle of the board), or, for a
 point near that spot, steps aside by 80 mm, so the carriage and rail do not hide the checker.
 After the first two rows the guess uses the points so far, so most of
@@ -113,30 +113,34 @@ def run(args):
             magnet_on(b)
             b.move(x, y)
             b.magnet(False)
-            b.move(*aside(x, y, args, park))  # so the carriage does not hide the checker
-            time.sleep(0.3)
-            img, jpeg = photo(b)
-            b.move(x, y)  # back under the checker (magnet off), the next loop turns it on
-            (OUT / f"p{i:02d}_{x:.0f}_{y:.0f}.jpg").write_bytes(jpeg)
-            s = img.shape[1] / 1024
-            if old is not None and tuple(old.size) != (img.shape[1], img.shape[0]):
-                old = None  # made for another camera resolution: its ellipses would be wrong
-            pred = predict(px, mm, (x, y), args.n)
-            circles = find_circles(img)
-            guess = None
-            if circles:
-                ref = pred or (img.shape[1] / 2, img.shape[0] / 2)
-                c = min(circles, key=lambda c: np.hypot(c[0] - ref[0], c[1] - ref[1]))
-                if pred is None or np.hypot(c[0] - pred[0], c[1] - pred[1]) < 60 * s:
-                    guess = (c[0], c[1])
-            if guess is None and pred is not None:
-                guess = pred
-            if args.auto and pred is not None and guess != pred and \
-                    np.hypot(guess[0] - pred[0], guess[1] - pred[1]) < 25 * s:
-                ans = guess
-            else:
-                ans = ask(img, guess, f"point {i + 1}/{len(pts)}  ({x:.0f}, {y:.0f}) mm",
-                          live_maps(px, mm, args.n) or (old and (old.px_to_mm, old.mm_to_px)))
+            while True:   # r in the window = take this photo again
+                b.move(*aside(x, y, args, park))  # so the carriage does not hide the checker
+                time.sleep(0.3)
+                img, jpeg = photo(b)
+                b.move(x, y)  # back under the checker (magnet off), the next loop turns it on
+                (OUT / f"p{i:02d}_{x:.0f}_{y:.0f}.jpg").write_bytes(jpeg)
+                s = img.shape[1] / 1024
+                if old is not None and tuple(old.size) != (img.shape[1], img.shape[0]):
+                    old = None  # made for another camera resolution: its ellipses would be wrong
+                pred = predict(px, mm, (x, y), args.n)
+                circles = find_circles(img)
+                guess = None
+                if circles:
+                    ref = pred or (img.shape[1] / 2, img.shape[0] / 2)
+                    c = min(circles, key=lambda c: np.hypot(c[0] - ref[0], c[1] - ref[1]))
+                    if pred is None or np.hypot(c[0] - pred[0], c[1] - pred[1]) < 60 * s:
+                        guess = (c[0], c[1])
+                if guess is None and pred is not None:
+                    guess = pred
+                if args.auto and pred is not None and guess != pred and \
+                        np.hypot(guess[0] - pred[0], guess[1] - pred[1]) < 25 * s:
+                    ans = guess
+                else:
+                    maps = live_maps(px, mm, args.n) or (old and (old.px_to_mm, old.mm_to_px))
+                    ans = ask(img, guess, f"point {i + 1}/{len(pts)}  ({x:.0f}, {y:.0f}) mm", maps,
+                              "Enter=OK  click=fix  r=photo again  s=skip  q=stop", retake=True)
+                if ans != "retake":
+                    break
             if ans == "quit":
                 break
             if ans == "skip":

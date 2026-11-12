@@ -205,8 +205,8 @@ class Game:
         self.b.move(*self.L.park())
         if not self.is_sim:
             time.sleep(0.3)
-        jpeg = self.b.capture()
-        img = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
+        from helpers import photo
+        img = photo(self.b)[0]   # a broken frame is taken again by itself
         self.c.check(img)   # calib.json made for another camera resolution: say so plainly
         return img
 
