@@ -266,9 +266,22 @@ def find_shift(g, c, L, board, reach=40):
 
 
 def learn_norm(img, c, L, board):
-    """Thresholds of the "norm" method from a photo of a known board."""
+    """Thresholds of the "norm" method from a photo of a known board. Tries no shift, the
+    shift find_shift suggests and the half of it; keeps the one that reads this board best
+    (on the real board the best-contrast shift was sometimes worse than none)."""
     g = _gray(img)
     du, dv = find_shift(g, c, L, board)
+    best = None
+    for sh in dict.fromkeys([(0, 0), (round(du / 2), round(dv / 2)), (du, dv)]):
+        n = _learn_norm_at(g, c, L, board, *sh)
+        ck, _ = find_norm(img, c, L, type("M", (), {"norm": n})())
+        wrong = sum(abs(a - b) for a, b in zip(summarize(ck, L).board, board))
+        if best is None or wrong < best[0]:
+            best = (wrong, n)
+    return best[1]
+
+
+def _learn_norm_at(g, c, L, board, du, dv):
     c = _Shifted(c, du, dv)
     placed = L.place(board)
     taken = [xy for xy, _ in placed.values()]

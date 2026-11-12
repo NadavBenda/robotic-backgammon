@@ -418,7 +418,10 @@ class Game:
         if before is not None and self.last_img is not before:
             best, cost, margin = vision.closest_by_change(before, self.last_img, self.c, self.L,
                                                           self.board, cands)
-            if cost == 0 and margin >= 1:   # exactly one legal move explains what changed
+            agree = vision.closest(r, cands)[0] == best
+            # one legal move explains what changed: clearly better than the rest, or the
+            # second best is just one slot worse and the colour reading picks the same move
+            if cost == 0 and (margin >= 2 or (margin >= 1 and agree)):
                 steps = next(s for s, nb in plays if to_robot(nb) == best)
                 self.log_fn(f"{side}'s move read by change: {rules.move_text(steps)}")
                 self.finish_human(side, d, steps, best, "read by change")
