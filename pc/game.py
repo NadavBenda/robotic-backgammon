@@ -94,6 +94,7 @@ class Game:
         self.coach = None
         self.photo = None                  # jpeg bytes with what vision found
         self.last_img = None               # the last photo (of the board as it was known), for reading by change
+        self.seen = None                   # the board the camera read last (the page can edit it)
         self.winner = None
         self.logfile = None
 
@@ -106,7 +107,8 @@ class Game:
                     "coach": self.coach, "settings": self.s, "sim": self.is_sim,
                     "off": [own_off, opp_off], "pips": rules.pips(self.board), "winner": self.winner,
                     "has_photo": self.photo is not None, "photo_t": getattr(self, "photo_t", 0),
-                    "pieces": self.pieces(), "labels": self.labels()}
+                    "pieces": self.pieces(), "labels": self.labels(), "seen": self.seen,
+                    "bar_y": round(self.L._row_y(6), 1)}
 
     def pieces(self):
         """Checkers in the picture frame (x right, y from the near side), for the page."""
@@ -232,6 +234,8 @@ class Game:
             n = len(self.history)
             cv2.imencode(".jpg", img)[1].tofile(str(self.logfile.with_suffix("")) + f"_{n:03d}.jpg")  # works with Hebrew paths
         self.last_img = img
+        with self.lock:
+            self.seen = list(r.board) if r.board else list(self.board)
         return r, img
 
     def learn_colours(self):
@@ -322,7 +326,7 @@ class Game:
         self.say(f"{side} rolled {d[0]}-{d[1]}, plays {txt} ({eng})", "robot_move")
         self.ex.play(steps, side=side)
         expected = after_view if side == "robot" else rules.flip(after_view)
-        self.check_after_robot(expected)
+        expected = self.check_after_robot(expected)
         with self.lock:
             self.board = expected
         self.record(side, d, steps, before, expected)
@@ -336,31 +340,50 @@ class Game:
         return expected_after(view, steps)
 
     def check_after_robot(self, expected):
+        """Photo after a robot move. Returns the board to go on with: expected, or the one
+        fixed on the page (Edit)."""
         before, board0 = self.last_img, list(self.board)
         r, img = self.look()
         if r.board == expected:
             self.ex.set_from_reading(r)
-            return
+            return expected
         if before is not None:   # what changed since the last photo is exactly this move: fine
             changed, _ = vision.slot_changes(before, img, self.c, self.L)
             if vision.change_cost(changed, self.L, board0, expected) == 0:
                 self.log_fn("after the robot's move: read by change (the photo matches the move)")
                 self.ex.set_from_board(expected)
-                return
+                return expected
         diff = [i for i in range(26) if r.board[i] != expected[i]]
         self.warn(f"after the robot's move the camera sees something else at {diff[:6]}"
                   + (f": {r.warnings[0]}" if r.warnings else ""))
         self.say("The board does not look as expected. Fix the checkers by hand and press Read again, "
-                 "or Accept to go on", "check", ["reread", "accept"])
+                 "Accept to go on, or fix the reading on the board below and press Use this board",
+                 "check", ["reread", "accept", "edit"])
         while True:
-            a = self.wait("reread", "accept")
+            a = self.wait("reread", "accept", "board")
             if a["name"] == "accept":
                 self.ex.set_from_board(expected)
-                return
+                return expected
+            if a["name"] == "board" and self._valid(a.get("value")):
+                b = [int(v) for v in a["value"]]
+                self.ex.set_from_board(b)
+                if b != expected:
+                    self.warn("board fixed on the page: it differs from the robot's move")
+                return b
             r, _ = self.look()
             if r.board == expected:
                 self.ex.set_from_reading(r)
-                return
+                return expected
+
+    @staticmethod
+    def _valid(b):
+        """A board from the page: 26 numbers, at most 15 checkers a side."""
+        try:
+            b = [int(v) for v in b]
+        except (TypeError, ValueError):
+            return False
+        return (len(b) == 26 and sum(v for v in b if v > 0) <= 15 and -sum(v for v in b if v < 0) <= 15
+                and b[0] >= 0 and b[25] <= 0)
 
     def human_turn(self, side="human"):
         d = self.roll(side)
@@ -393,8 +416,8 @@ class Game:
                     break
             steps, nb = hit[0]
             self.ex.play(steps, side=side)
-            self.check_after_robot(to_robot(nb))
-            self.finish_human(side, d, steps, to_robot(nb), "moved by the robot")
+            got = self.check_after_robot(to_robot(nb))
+            self.finish_human(side, d, steps, got, "moved by the robot")
             return
 
         self.drain()
@@ -484,10 +507,27 @@ class Game:
                 self.finish_human(side, d, None, r.board, "not legal, taken as seen")
                 self.ex.set_from_reading(r)
                 return
+            with self.lock:
+                self.legal = sorted(rules.move_text(s) for s, _ in plays)
             self.say("I can't read the move: " + "; ".join(r.warnings[:2] or ["board unchanged"])
-                     + f". Closest legal move: {rules.move_text(steps)}", "check",
-                     ["reread", "closest", "done"])
-            a = self.wait("reread", "closest", "done")
+                     + f". Closest legal move: {rules.move_text(steps)}. Or pick the move you made, "
+                     "or fix the reading on the board below", "check",
+                     ["reread", "closest", "move_pick", "edit"])
+            a = self.wait("reread", "closest", "done", "move", "board")
+            if a["name"] == "move":
+                hit = [(s, nb) for s, nb in plays if rules.move_text(s) == a.get("value")]
+                if hit:
+                    self.finish_human(side, d, hit[0][0], to_robot(hit[0][1]), "move picked on the page")
+                    self.ex.set_from_board(to_robot(hit[0][1]))
+                    return
+                continue
+            if a["name"] == "board" and self._valid(a.get("value")):
+                b = [int(v) for v in a["value"]]
+                legal = [s for s, nb in plays if to_robot(nb) == b]
+                self.finish_human(side, d, legal[0] if legal else None, b,
+                                  "fixed on the page" + ("" if legal else " (not a legal move)"))
+                self.ex.set_from_board(b)
+                return
             if a["name"] == "closest":
                 self.finish_human(side, d, steps, best, "closest legal move, chosen on the page")
                 self.ex.set_from_board(best)

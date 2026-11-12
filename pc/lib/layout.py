@@ -90,8 +90,11 @@ class Layout:
             k = q - 1 if q <= 6 else q
             return right(i), self._row_y(k)
         if where in ("bar_robot", "bar_human"):
-            # the bar row works like a point: from the edge toward the lane
-            return (left(i) if where == "bar_robot" else right(i)), self._row_y(6)
+            # the bar row, a hit checker goes to the middle (Nadav 12.11): the first in the
+            # middle of the half row, the next ones toward the lane (each new one comes from
+            # the lane and must not pass the ones already there), then outward
+            j = (3, 4, 5, 2, 1, 0)[i] if i < 6 else i
+            return (left(j) if where == "bar_robot" else right(j)), self._row_y(6)
         if where in ("off_robot", "off_human"):
             r, j = divmod(i, self.per_row_off)
             if r >= len(self.off_rows_y):   # 15th checker: past the end of the last row
