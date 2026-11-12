@@ -91,7 +91,40 @@ class Executor:
                 return xy
         return self.L.slot(where, len(lst))
 
-    def move_checker(self, frm_key, to_key, side=None):
+    def _next_to(self, where, frm_key, bar_key):
+        """Where the hitter waits next to the blot: a free spot 28-45 mm from it from which
+        the blot still has a clean way to the bar and the hitter a clean way in.
+        None if there is no such spot (then the old order: blot out first)."""
+        lst, src = self.places.get(where) or [], self.places.get(frm_key) or []
+        if not lst or not src:
+            return None
+        mid = self.L.xmax / 2
+        start = tuple(src[min(range(len(src)), key=lambda i: abs(self.L.from_magnet(*src[i])[0] - mid))])
+        blot = np.asarray(lst[0], float)
+        bar = self._free_slot(bar_key)
+        rest = [p for p in self.all_xy() if np.hypot(p[0] - start[0], p[1] - start[1]) > 1]
+        others_blot = [p for p in rest if np.hypot(p[0] - blot[0], p[1] - blot[1]) > 1]
+        best = None
+        for r in (28.0, 36.0, 45.0):
+            for a in np.linspace(0, 2 * np.pi, 16, endpoint=False):
+                q = (float(blot[0] + r * np.cos(a)), float(blot[1] + r * np.sin(a)))
+                if not (8 <= q[0] <= self.L.xmax - 8 and 8 <= q[1] <= self.L.ymax - 8):
+                    continue
+                if any(np.hypot(q[0] - o[0], q[1] - o[1]) < self.L.checker + 1 for o in others_blot):
+                    continue
+                try:
+                    p1 = paths.plan(start, q, rest, self.L.xmax, self.L.ymax)
+                    p2 = paths.plan(tuple(blot), bar, others_blot + [q], self.L.xmax, self.L.ymax)
+                except paths.NoPath:
+                    continue
+                cost = paths.length(p1) + paths.length(p2) + 2 * r
+                if best is None or cost < best[0]:
+                    best = (cost, q)
+            if best is not None:
+                return best[1]
+        return None
+
+    def move_checker(self, frm_key, to_key, side=None, goal=None):
         lst = self.places.get(frm_key)
         if not lst:
             raise RuntimeError(f"no checker on {frm_key}")
@@ -100,7 +133,8 @@ class Executor:
         top = min(range(len(lst)), key=lambda i: abs(self.L.from_magnet(*lst[i])[0] - mid))
         lst.append(lst.pop(top))
         start = tuple(lst[-1])
-        goal = self._free_slot(to_key)
+        if goal is None:
+            goal = self._free_slot(to_key)
         others = [p for p in self.all_xy() if np.hypot(p[0] - start[0], p[1] - start[1]) > 1]
         path, how = self.plan(start, goal, others)
         self.log(f"   {frm_key} -> {to_key}: {len(path) - 1} line(s), {paths.length(path):.0f} mm ({how})")
@@ -115,6 +149,8 @@ class Executor:
             self.side_of[to_key] = side
         if isinstance(frm_key, int) and not lst:
             self.side_of.pop(frm_key, None)
+        if not lst and str(frm_key).startswith("_"):
+            self.places.pop(frm_key, None)
 
     def goto(self, xy, others=None):
         """Magnet off: drive to xy around the checkers (paths.travel)."""
@@ -201,9 +237,18 @@ class Executor:
         t0 = time.time()
         for st in steps:
             to_key = self._key(st.to, side)
+            frm_key = self._key(st.frm, side)
             if st.hit:
+                near = self._next_to(to_key, frm_key, f"bar_{opp}")
+                if near is not None:
+                    # Nadav 12.11: the hitter first stops next to the blot, the blot goes to
+                    # the middle of the bar, then the hitter takes its place
+                    self.move_checker(frm_key, "_hitter", side, goal=near)
+                    self.move_checker(to_key, f"bar_{opp}", opp)
+                    self.move_checker("_hitter", to_key, side)
+                    continue
                 self.move_checker(to_key, f"bar_{opp}", opp)
-            self.move_checker(self._key(st.frm, side), to_key, side)
+            self.move_checker(frm_key, to_key, side)
         return time.time() - t0
 
     # -- set up a position -------------------------------------------------

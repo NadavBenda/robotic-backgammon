@@ -79,7 +79,33 @@ const NAMES={mode:"Mode",engine:"Engine",dice:"Dice",human_move:"Your move",visi
  coach:"Coach",first:"Who starts",board:"Board"};
 const BTN={new:"New game",done:"Done",accept:"Accept",reread:"Read again",closest:"Take closest legal move",
  learn:"Learn colours",arrange:"Robot arranges the board",rolled:"Rolled"};
-let S=null, built=false, lastPhoto=0;
+let S=null, built=false, lastPhoto=0, ED=null, EDC="robot";
+// -- editing what the camera read: click a point to add a checker of the chosen colour --
+function edPlace(ev){if(!ED)return;const svg=document.getElementById("board");const pt=svg.createSVGPoint();
+ pt.x=ev.clientX;pt.y=ev.clientY;const q=pt.matrixTransform(svg.getScreenCTM().inverse());const H=430,y=H-q.y,left=q.x<205;
+ let best=null;for(const [x,ly,n] of S.labels){if((x<205)!==left)continue;const d=Math.abs(ly-y);if(!best||d<best[0])best=[d,25-n]}
+ if(Math.abs(S.bar_y-y)<(best?best[0]:1e9))best=[0,left?0:25];
+ if(!best)return;const p=best[1],sign=EDC==="robot"?1:-1;
+ if(p===0||p===25){if(EDC==="remove"){if(p===0&&ED[0]>0)ED[0]--;if(p===25&&ED[25]<0)ED[25]++}
+   else if(p===0&&EDC==="robot")ED[0]++;else if(p===25&&EDC==="human")ED[25]--}
+ else if(EDC==="remove"){if(ED[p]>0)ED[p]--;else if(ED[p]<0)ED[p]++}
+ else if(ED[p]*sign<0)ED[p]=sign;else ED[p]+=sign;
+ drawEdit(S)}
+function offOf(b){let r=0,h=0;for(const v of b){if(v>0)r+=v;else h-=v}return [15-r,15-h]}
+function drawEdit(s){const svg=document.getElementById("board");const H=430;
+ let h=`<rect x="-32" y="-16" width="474" height="482" rx="10" fill="var(--card)" stroke="#e0a000" stroke-width="3"/>`;
+ h+=`<rect x="150" y="-10" width="110" height="${H-60}" fill="var(--line)" opacity=".25"/>`;
+ for(const [x,y,n] of s.labels){const left=x<205;
+  const pts=left?`${x-13},${H-y-13} ${x-13},${H-y+13} ${x+150},${H-y}`:`${x+13},${H-y-13} ${x+13},${H-y+13} ${x-150},${H-y}`;
+  h+=`<polygon points="${pts}" fill="${n%2?'#c9a77c':'#8f6a43'}" opacity=".45"/>`;
+  h+=`<text x="${left?-22:432}" y="${H-y+4}" font-size="11" text-anchor="middle" fill="var(--mute)">${n}</text>`;
+  const v=ED[25-n];if(v)h+=`<circle cx="${x}" cy="${H-y}" r="12.5" fill="var(--${v>0?'robot':'human'})" stroke="#0006"/>`+
+   `<text x="${x}" y="${H-y+5}" font-size="14" font-weight="bold" text-anchor="middle" fill="${v>0?'#000':'#fff'}">${Math.abs(v)}</text>`}
+ const bx=[[60,ED[0],"robot"],[350,-ED[25],"human"]];
+ for(const [x,v,side] of bx){h+=`<text x="${x}" y="${H-s.bar_y+4}" font-size="11" text-anchor="middle" fill="var(--mute)">bar</text>`;
+  if(v)h+=`<circle cx="${x+30}" cy="${H-s.bar_y}" r="12.5" fill="var(--${side})" stroke="#0006"/><text x="${x+30}" y="${H-s.bar_y+5}" font-size="14" font-weight="bold" text-anchor="middle" fill="${side==='robot'?'#000':'#fff'}">${v}</text>`}
+ const o=offOf(ED);h+=`<text x="205" y="${H-31-4}" font-size="12" text-anchor="middle" fill="var(--mute)">off: robot ${o[0]} · you ${o[1]}</text>`;
+ svg.innerHTML=h}
 function post(a){return fetch("/action",{method:"POST",body:JSON.stringify(a)})}
 function el(t,attrs={},kids=[]){const e=document.createElement(t);for(const k in attrs){
  if(k=="text")e.textContent=attrs[k];else if(k.startsWith("on"))e[k]=attrs[k];else e.setAttribute(k,attrs[k])}
@@ -110,6 +136,12 @@ function render(s){S=s;if(!built){buildSettings(s.settings);built=true}
   for(const k of s.asks){
    if(k==="dice_input"){const i=el("input",{placeholder:"dice, e.g. 5 2",size:8});
     a.append(i,el("button",{text:"OK",onclick:()=>post({name:"dice",value:i.value})}))}
+   else if(k==="edit"){const sel=el("select",{onchange:()=>{EDC=sel.value}});
+    for(const [v,t] of [["robot","click adds white (robot)"],["human","click adds red (you)"],["remove","click removes one"]])
+     sel.append(el("option",{value:v,text:t}));sel.value=EDC;
+    a.append(el("div",{class:"mute",text:"Fix the reading: click a point (or the bar) on the board."}),sel,
+     el("button",{text:"Use this board",onclick:()=>post({name:"board",value:ED})}),
+     el("button",{class:"sec",text:"Back to the camera's reading",onclick:()=>{ED=S.seen.slice();drawEdit(S)}}))}
    else if(k==="move_pick"){const sel=el("select");for(const m of s.legal)sel.append(el("option",{text:m}));
     a.append(sel,el("button",{text:"Play this",onclick:()=>post({name:"move",value:sel.value})}))}
    else a.append(el("button",{text:BTN[k]||k,onclick:()=>post({name:k})}))}
@@ -119,7 +151,7 @@ function render(s){S=s;if(!built){buildSettings(s.settings);built=true}
  document.getElementById("offs").textContent=`Off robot ${s.off[0]} · you ${s.off[1]}`;
  document.getElementById("coach").textContent=s.coach||"";
  const w=document.getElementById("warns");w.innerHTML="";for(const t of s.warnings)w.append(el("div",{class:"warn",text:"⚠ "+t}));
- drawBoard(s);
+ if(s.asks.includes("edit")&&s.seen){if(!ED)ED=s.seen.slice();drawEdit(s)}else{ED=null;drawBoard(s)}
  const t=document.getElementById("hist");t.innerHTML="";
  for(const m of s.history.slice().reverse())t.append(el("tr",{},[el("td",{text:m.n}),el("td",{text:m.who}),
   el("td",{text:m.dice.join("-")}),el("td",{text:m.move}),el("td",{class:"mute",text:m.note||""})]));
@@ -127,6 +159,7 @@ function render(s){S=s;if(!built){buildSettings(s.settings);built=true}
   im.src="/top.jpg?t="+s.photo_t;im.style.display="block";
   const tp=document.getElementById("top");tp.src="/photo.jpg?t="+s.photo_t;tp.style.display="block"}}
 async function tick(){try{render(await (await fetch("/state")).json())}catch(e){}setTimeout(tick,500)}
+document.getElementById("board").addEventListener("click",edPlace);
 tick();
 </script></body></html>"""
 

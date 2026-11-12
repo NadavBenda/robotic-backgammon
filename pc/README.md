@@ -57,7 +57,7 @@ Also from a phone on the same WiFi (the address is printed).
 | `layout.py` | where each checker goes, in mm (points, bar, bear-off trays, dice zone, park spot) | defaults from plan v4 fitted to 410x420; `teach_layout.py` fits it to the real board in 4 clicks |
 | `vision.py` | board from one photo: colour of the rim around the steel bottom | scan (default) / slots / hough, + closest legal board |
 | `dice.py` | the roll | digital / typed / camera (bottom face, 7 - pips) |
-| `executor.py` | a move -> drags: hit to the bar first, bear-off tray, paths | route: A* -> tight A* -> lane -> straight; `arrange()` sets up a position |
+| `executor.py` | a move -> drags: on a hit the hitter waits next to the blot, the blot goes to the middle of the bar, then the hitter goes in; bear-off tray, paths | route: A* -> tight A* -> lane -> straight; `arrange()` sets up a position |
 | `sim.py` | fake board: checkers follow the magnet, photos drawn through a fake camera | |
 | `board_art.py` | `board_art.svg`, the board graphics at 1:1 from layout.json | |
 | `lib/tests/` | `py lib/tests/test_rules.py`, `py lib/tests/test_sim.py` (whole game in the simulator) | |
