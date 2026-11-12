@@ -182,8 +182,14 @@ class SimBoard:
     def human_move(self, frm_xy, to_xy, sloppy=4.0):
         """A person picks the checker nearest frm_xy and puts it near to_xy."""
         i = min(range(len(self.ck)), key=lambda i: np.hypot(self.ck[i][0] - frm_xy[0], self.ck[i][1] - frm_xy[1]))
-        self.ck[i][0] = float(to_xy[0] + self.rng.uniform(-sloppy, sloppy))
-        self.ck[i][1] = float(to_xy[1] + self.rng.uniform(-sloppy, sloppy))
+        # a hand does not put a checker on top of another: less sloppy until it fits
+        for k in range(20):
+            s = sloppy * (1 - k / 20)
+            x = float(to_xy[0] + self.rng.uniform(-s, s))
+            y = float(to_xy[1] + self.rng.uniform(-s, s))
+            if all(np.hypot(o[0] - x, o[1] - y) >= 25.5 for j, o in enumerate(self.ck) if j != i):
+                break
+        self.ck[i][0], self.ck[i][1] = x, y
         return i
 
     def checkers(self):
