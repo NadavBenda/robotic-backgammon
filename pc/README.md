@@ -22,3 +22,22 @@ with Board() as b:          # finds the ESP32 port by itself, or Board("COM5")
     b.magnet(True); b.move(150, 200); b.magnet(False)
     jpeg = b.capture()
 ```
+
+## Playing a whole game (12.11)
+
+`py game.py` (double-click) opens a page in the browser: the board, the dice, the buttons and the
+settings. Real board if it is connected, otherwise a simulator (to try everything without hardware).
+Also from a phone on the same WiFi (the address is printed).
+
+| file | what | options inside |
+|---|---|---|
+| `game.py` | turns, dice, reading the human's move, end of game, log in `games/` | mode: robot vs human / robot vs robot (demo) / watch (two people, the robot checks); human move: Done button / automatic (waits until the board shows a legal move) / pick it on the page and the robot moves it |
+| `webui.py` | the page + terminal fallback (n, d, 52, ...) | |
+| `rules.py` | legal moves, simple engine, find the move between two boards | engine: gnubg / simple / random |
+| `layout.py` | where each checker goes, in mm (points, bar, bear-off trays, dice zone, park spot) | defaults from plan v4 fitted to 410x420; `teach_layout.py` fits it to the real board in 4 clicks |
+| `vision.py` | board from one photo: colour of the rim around the steel bottom | scan (default) / slots / hough, + closest legal board |
+| `dice.py` | the roll | digital / typed / camera (bottom face, 7 - pips) |
+| `executor.py` | a move -> drags: hit to the bar first, bear-off tray, paths | route: A* -> tight A* -> lane -> straight; `arrange()` sets up a position |
+| `sim.py` | fake board: checkers follow the magnet, photos drawn through a fake camera | |
+| `board_art.py` | `board_art.svg`, the board graphics at 1:1 from layout.json | |
+| `tests/` | `py tests/test_rules.py`, `py tests/test_sim.py` (whole game in the simulator) | |
