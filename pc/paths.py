@@ -152,5 +152,4 @@ def drag(b, path, overshoot=OVERSHOOT, grab_s=GRAB_S, xmax=XMAX, ymax=YMAX):
     n = float(np.hypot(*d))
     end = np.clip(z + (d / n * overshoot if n > 1 else 0), 0, [xmax, ymax])
     b.move(float(end[0]), float(end[1]))
-    b.magnet(False)
-    time.sleep(0.2)
+    b.magnet(False)  # the board waits 250 ms before it answers

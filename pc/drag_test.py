@@ -37,6 +37,7 @@ def floats(t):
 
 
 SHOTS = OUT / "drag_test"
+DEFAULT_DRAG = (150, 300)  # same as board.ino, restored when nothing held
 
 
 def where(b, c, args, target, label):
@@ -148,6 +149,7 @@ def main(args):
                   f"Set on the board now (until the next reset); "
                   f"tell Claude to make it the default in board.ino.")
         elif okays:
+            b.drag_profile(*DEFAULT_DRAG)
             print("\nNo profile held for every checker. Try lower accelerations.")
 
     if rows:

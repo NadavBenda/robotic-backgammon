@@ -127,8 +127,7 @@ def carry(b, frm, to, args):
     end = np.asarray(to, float) + (d / dist * args.overshoot if dist > 1 else 0)
     end = np.clip(end, 0, [args.xmax, args.ymax])
     b.move(float(end[0]), float(end[1]))
-    b.magnet(False)
-    time.sleep(0.2)
+    b.magnet(False)  # the board waits 250 ms before it answers
 
 
 def swap(b, a, bb, args):
@@ -145,8 +144,6 @@ def main(args):
     done = 0
     with Board(args.port) as b:
         b.home_if_needed()
-        if args.drag:
-            b.drag_profile(*args.drag)
         while done < args.times:
             b.move(*args.park)
             time.sleep(0.3)
@@ -178,8 +175,6 @@ if __name__ == "__main__":
     ap.add_argument("--side", type=float, default=40,
                     help="min mm from the middle of A-B to the waiting spot (grows if needed)")
     ap.add_argument("--grab", type=float, default=0.3, help="s to wait after the magnet turns on")
-    ap.add_argument("--drag", type=lambda t: tuple(map(float, t.split(","))),
-                    help="speed,accel while dragging, mm/s and mm/s^2 (firmware default 120,300)")
     ap.add_argument("--overshoot", type=float, default=3,
                     help="mm past the target before the magnet lets go (the checker lags)")
     ap.add_argument("--wiggle", type=float, default=0,
