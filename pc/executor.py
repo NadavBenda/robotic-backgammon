@@ -25,7 +25,7 @@ import numpy as np
 import paths
 from gnubg import BAR, OFF
 
-DRAG = (200, 800)      # mm/s, mm/s2 with a checker; drag_test 12.11 at Vref 0.86: 250/800 failed, 200/800 held
+DRAG = (180, 800)      # mm/s, mm/s2 with a checker; drag_test 12.11 at Vref 0.86: 250/800 failed, 200/800 held; 180 for margin
 ROUTES = ("astar", "tight", "lane", "straight")
 
 

@@ -37,7 +37,7 @@ def floats(t):
 
 
 SHOTS = OUT / "drag_test"
-DEFAULT_DRAG = (150, 300)  # same as board.ino, restored when nothing held
+DEFAULT_DRAG = (180, 800)  # same as board.ino, restored when nothing held
 
 
 def where(b, c, args, target, label):
