@@ -14,25 +14,31 @@ import numpy as np
 
 from board import Board
 
-out = Path(__file__).parent / "captures"
-out.mkdir(exist_ok=True)
 
-with Board(sys.argv[1] if len(sys.argv) > 1 else None) as b:
-    print("Connected:", b.status())
-    while input("Enter = photo, q = quit: ").strip().lower() != "q":
-        t0 = time.time()
-        jpeg = b.capture()
-        path = out / time.strftime("%Y%m%d_%H%M%S.jpg")
-        path.write_bytes(jpeg)
-        img = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
-        print(f"{path.name}: {img.shape[1]}x{img.shape[0]}, {len(jpeg) // 1024} KB, {time.time() - t0:.2f} s")
-        cv2.imshow("board", img)
-        try:   # after calibration: also the straightened top view
-            import calib
-            flat = calib.topdown(img, calib.load())
-            cv2.imwrite(str(path.with_name(path.stem + "_top.jpg")), flat)
-            cv2.imshow("board from above (1 px = 1 mm)", flat)
-        except (OSError, ValueError, KeyError):
-            pass
-        cv2.waitKey(1)
-cv2.destroyAllWindows()
+def main():
+    out = Path(__file__).parent / "captures"
+    out.mkdir(exist_ok=True)
+
+    with Board(sys.argv[1] if len(sys.argv) > 1 else None) as b:
+        print("Connected:", b.status())
+        while input("Enter = photo, q = quit: ").strip().lower() != "q":
+            t0 = time.time()
+            jpeg = b.capture()
+            path = out / time.strftime("%Y%m%d_%H%M%S.jpg")
+            path.write_bytes(jpeg)
+            img = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
+            print(f"{path.name}: {img.shape[1]}x{img.shape[0]}, {len(jpeg) // 1024} KB, {time.time() - t0:.2f} s")
+            cv2.imshow("board", img)
+            try:   # after calibration: also the straightened top view
+                import calib
+                flat = calib.topdown(img, calib.load())
+                cv2.imwrite(str(path.with_name(path.stem + "_top.jpg")), flat)
+                cv2.imshow("board from above (1 px = 1 mm)", flat)
+            except (OSError, ValueError, KeyError):
+                pass
+            cv2.waitKey(1)
+    cv2.destroyAllWindows()
+
+
+if __name__ == "__main__":
+    main()
