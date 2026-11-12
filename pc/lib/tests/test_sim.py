@@ -45,6 +45,22 @@ def test_vision_reads_sloppy_human_move():
     assert r.board == exp and not r.warnings
 
 
+
+def test_read_by_change():
+    """The human's move found from what changed between two photos, among the legal moves."""
+    L = Layout()
+    b = SimBoard.with_board(rules.OPENING, L, noise_mm=0.5, seed=3)
+    before = photo(b, L)
+    b.human_move(L.slot(1, 1), L.slot(7, 0), sloppy=4)   # human 6-1: robot view 1 -> 7 and 17 -> 18
+    b.human_move(L.slot(17, 2), L.slot(18, 0), sloppy=4)
+    after = photo(b, L)
+    hv = rules.flip(rules.OPENING)
+    cands = [rules.flip(nb) for _, nb in rules.legal_moves(hv, (6, 1))]
+    exp = list(rules.OPENING)
+    exp[1], exp[7], exp[17], exp[18] = -1, -1, -2, -1
+    best, cost, margin = vision.closest_by_change(before, after, b.calib, L, rules.OPENING, cands)
+    assert best == exp and cost == 0 and margin >= 1, (best, cost, margin)
+
 def play_game(seed):
     L = Layout()
     b = SimBoard.with_board(rules.OPENING, L, seed=seed, noise_mm=0.5)
