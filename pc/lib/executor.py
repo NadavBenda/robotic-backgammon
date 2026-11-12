@@ -133,7 +133,10 @@ class Executor:
                 if how == "tight":
                     return paths.plan(start, goal, others, self.L.xmax, self.L.ymax, clear=27.0), how
                 if how == "lane":
-                    return self.lane_path(start, goal, others), how
+                    o = np.asarray(others, float).reshape(-1, 2)
+                    need = paths._needs(np.asarray(start, float), np.asarray(goal, float), o,
+                                        self.L.checker - 1.5)
+                    return paths.round_corners(self.lane_path(start, goal, others), o, need), how
             except paths.NoPath as e:
                 self.last_nopath = str(e)
                 continue
