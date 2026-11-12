@@ -12,7 +12,7 @@ to mark it yourself), r = new photo, q = stop.
 
 The swap goes through a free spot beside the two, so the checkers never touch:
 A -> spot, B -> A, spot -> B. Each new swap starts from a fresh photo, so small
-placement errors do not add up. Before letting go the magnet goes --overshoot mm (3)
+placement errors do not add up. Before letting go the magnet goes --overshoot mm (5) and back
 past the target, because the checker lags a little behind it.
 """
 import sys  # noqa: E402
@@ -131,7 +131,10 @@ def carry(b, frm, to, args):
     end = np.asarray(to, float) + (d / dist * args.overshoot if dist > 1 else 0)
     end = np.clip(end, 0, [args.xmax, args.ymax])
     b.move(float(end[0]), float(end[1]))
-    b.magnet(False)  # the board waits 250 ms before it answers
+    if args.overshoot > 0:
+        b.move(*to)   # back onto the target
+    time.sleep(0.4)   # magnet still on: the checker centres over it
+    b.magnet(False)  # the board waits 500 ms before it answers
 
 
 def swap(b, a, bb, args):
@@ -180,7 +183,7 @@ if __name__ == "__main__":
     ap.add_argument("--side", type=float, default=40,
                     help="min mm from the middle of A-B to the waiting spot (grows if needed)")
     ap.add_argument("--grab", type=float, default=0.3, help="s to wait after the magnet turns on")
-    ap.add_argument("--overshoot", type=float, default=3,
+    ap.add_argument("--overshoot", type=float, default=5,
                     help="mm past the target before the magnet lets go (the checker lags)")
     ap.add_argument("--wiggle", type=float, default=0,
                     help="mm radius of a small circle under the checker after grabbing (0 = off)")

@@ -3,7 +3,7 @@
     from paths import plan, drag
     pts = plan((100, 50), (300, 200), others=[(150, 60), (160, 90)])
     # [(100, 50), (128, 112), (300, 200)]   corners only, in mm
-    drag(b, pts)                             # magnet on, through the corners, overshoot, off
+    drag(b, pts)                             # magnet on, corners, overshoot, back, wait, off
 
 The dragged checker's centre keeps CLEAR mm from every other checker's centre
 (26 = touching; 30 leaves 4 mm air, so the magnet does not pull the neighbour too).
@@ -28,7 +28,8 @@ SOFT = 50.0       # prefer staying at least this far (24 mm air), worth a detour
 NEAR_W = 3.0      # how much a mm next to a checker costs over a mm in the open (x (1 + NEAR_W))
 GRID = 5.0        # mm
 XMAX, YMAX = 410.0, 420.0
-OVERSHOOT = 3.0   # mm past the target before letting go (the checker lags)
+OVERSHOOT = 5.0   # mm past the target along the last line (the checker lags), then back
+SETTLE_S = 0.4    # s on the target with the magnet still on, so the checker centres over it
 GRAB_S = 0.3      # s after the magnet turns on
 ROUND_MM = 10.0   # a sharp corner is cut by one short line from this far before it to this far after
 ROUND_N = 0       # extra points between those two (0 = a plain cut; each point is a brief stop)
@@ -197,8 +198,10 @@ def length(path):
     return float(sum(np.hypot(b[0] - a[0], b[1] - a[1]) for a, b in zip(path, path[1:])))
 
 
-def drag(b, path, overshoot=OVERSHOOT, grab_s=GRAB_S, xmax=XMAX, ymax=YMAX):
-    """Drive the magnet along a planned path with the checker on it."""
+def drag(b, path, overshoot=OVERSHOOT, grab_s=GRAB_S, xmax=XMAX, ymax=YMAX, settle_s=SETTLE_S):
+    """Drive the magnet along a planned path with the checker on it. At the end: on past the
+    target by `overshoot` mm (pulls the lagging checker up), back onto the target, wait
+    `settle_s` with the magnet on so the checker centres over it, then let go."""
     from helpers import magnet_on  # waits if the magnet is hot
     b.move(*path[0])
     magnet_on(b)
@@ -210,4 +213,7 @@ def drag(b, path, overshoot=OVERSHOOT, grab_s=GRAB_S, xmax=XMAX, ymax=YMAX):
     n = float(np.hypot(*d))
     end = np.clip(z + (d / n * overshoot if n > 1 else 0), 0, [xmax, ymax])
     b.move(float(end[0]), float(end[1]))
-    b.magnet(False)  # the board waits 250 ms before it answers
+    if overshoot > 0:
+        b.move(float(z[0]), float(z[1]))
+    time.sleep(settle_s)
+    b.magnet(False)  # the board waits 500 ms before it answers

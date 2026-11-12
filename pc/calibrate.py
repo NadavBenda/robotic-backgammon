@@ -31,6 +31,7 @@ import numpy as np
 
 import calib
 import calib_map
+import paths
 import ui
 from board import Board, BoardError
 from helpers import ask, find_circles, magnet_on, photo, step_aside
@@ -112,6 +113,7 @@ def run(args):
         for i, (x, y) in enumerate(pts):
             magnet_on(b)
             b.move(x, y)
+            time.sleep(paths.SETTLE_S)  # magnet still on: the checker centres over the point
             b.magnet(False)
             while True:   # r in the window = take this photo again
                 b.move(*aside(x, y, args, park))  # so the carriage does not hide the checker
@@ -165,7 +167,7 @@ def run(args):
         c = calib.fit([px[i] for i in keep], [mm[i] for i in keep], size=size)
     c.save()
     print(f"\nSaved {calib.PATH.name}: {len(px)} points, error {c.rms_mm:.1f} mm RMS, worst {c.max_mm:.1f} mm")
-    print("Goal: worst under 3 mm. Check it with:  py calibrate.py test")
+    print("Check it with:  py calibrate.py test  (a worst point up to ~9 mm is fine for playing)")
     bad = [p for p in c.points if p[4] > calib_map.LIMIT_MM]
     for u, v, x, y, e in sorted(bad, key=lambda p: -p[4]):
         print(f"   over 3 mm: ({x:.0f}, {y:.0f}) mm  {e:.1f} mm")

@@ -184,7 +184,7 @@ if __name__ == "__main__":
     ap.add_argument("--accels", type=floats, default=floats("300,800"),
                     help="mm/s^2, low to high (max 5000)")
     ap.add_argument("--tol", type=float, default=30, help="mm from the target that still counts as OK")
-    ap.add_argument("--overshoot", type=float, default=3)
+    ap.add_argument("--overshoot", type=float, default=5)
     ap.add_argument("--grab", type=float, default=0.3)
     ap.add_argument("--wiggle", type=float, default=0)
     ap.add_argument("--park", type=lambda t: tuple(map(float, t.split(","))), default=(410, 420),
