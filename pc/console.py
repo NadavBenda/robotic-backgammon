@@ -4,7 +4,8 @@
     py console.py COM5
 
 Type board commands as usual: H, G 100 200, R 10 0, M 1, M 0, C, ?
-  C saves the photo in captures/ and shows it.
+  C saves the photo in captures/ and shows it; after calibration also the photo
+  straightened to a top view (1 px = 1 mm, saved as *_top.jpg).
   q = quit.
 Two modes:
   normal    only results (OK / ERR), warnings (!) and answers such as POS
@@ -32,6 +33,14 @@ def log(line):
         print("   <", line)
 
 
+def topdown_or_none(img):
+    try:
+        import calib
+        return calib.topdown(img, calib.load())
+    except (OSError, ValueError, KeyError):
+        return None   # no calib.json yet
+
+
 def run(b, line):
     t0 = time.time()
     if dev:
@@ -49,6 +58,10 @@ def run(b, line):
             img = cv2.imdecode(np.frombuffer(x, np.uint8), cv2.IMREAD_COLOR)
             print(f"photo {img.shape[1]}x{img.shape[0]}, {len(x) // 1024} KB -> {path.name}")
             cv2.imshow("board", img)
+            flat = topdown_or_none(img)
+            if flat is not None:   # after calibration: also the straightened top view
+                cv2.imwrite(str(path.with_name(path.stem + "_top.jpg")), flat)
+                cv2.imshow("board from above (1 px = 1 mm)", flat)
             cv2.waitKey(1)
         elif not dev:
             print(x)

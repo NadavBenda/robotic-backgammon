@@ -119,6 +119,24 @@ def fit(px, mm, deg=2):
     return c
 
 
+def topdown(img, c, px_per_mm=1.0, xmax=410.0, ymax=420.0, margin=20.0):
+    """The photo as if taken straight from above: lens distortion, tilt and mirror removed.
+    Pixel (i, j) of the result is board mm (x0 + j / px_per_mm, y0 + i / px_per_mm) with
+    x0 = y0 = -margin, so x grows to the right and y downward. Straight lines on the
+    board come out straight when the calibration is good."""
+    xs = np.arange(-margin, xmax + margin, 1.0 / px_per_mm)
+    ys = np.arange(-margin, ymax + margin, 1.0 / px_per_mm)
+    gx, gy = np.meshgrid(xs, ys)
+    u, v = c.mm_to_px(gx, gy)
+    out = cv2.remap(img, np.float32(u), np.float32(v), cv2.INTER_LINEAR,
+                    borderMode=cv2.BORDER_CONSTANT, borderValue=(40, 40, 40))
+    # board edge (the magnet travel) as a thin frame
+    k = px_per_mm
+    cv2.rectangle(out, (int(margin * k), int(margin * k)),
+                  (int((xmax + margin) * k), int((ymax + margin) * k)), (0, 200, 255), 1)
+    return out
+
+
 def load(path=PATH):
     d = json.loads(Path(path).read_text())
     mk = lambda m: _Map(m["H"], m["corr"], m["unit"], m["deg"], m.get("k", (0.0, 0.0)))

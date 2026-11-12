@@ -9,8 +9,8 @@
  *   H              home (Y then X), then slowly off each switch until it releases   ERR HOME_X / HOME_Y / HOME_X_STUCK / HOME_Y_STUCK
  *   G <x> <y>      absolute move, mm                       ERR NOT_HOMED / BOUNDS / LIMIT_X / LIMIT_Y
  *   R <dx> <dy>    relative move, mm                       same
- *   M 1 / M 0      electromagnet on / off; M 0 answers DONE only after 250 ms, so the
- *                  checker is let go before the next move          ERR MAG_HOT
+ *   M 1 / M 0      electromagnet on / off; M 1 answers DONE after 300 ms (the checker centres
+ *                  over the magnet), M 0 after 500 ms (it is let go)  ERR MAG_HOT
  *   C              capture: "IMG <n>" line, then exactly n JPEG bytes, then DONE   ERR CAM
  *                  (allowed with the magnet on, but warns "! CAPTURE_WITH_MAG_ON")
  *   P <v> <a>      drag profile (magnet on): top speed mm/s, accel mm/s^2, default 180 / 800
@@ -78,7 +78,8 @@ const long MAX_TRAVEL     = 25000;
 
 const float START_SPEED_STEPS = 800.0;   // 20 מ"מ/ש' (עם אבן)
 const float FREE_START_STEPS  = 1600.0;  // 40 מ"מ/ש' (בלי אבן: יציאה חדה מתחת לאבן שהונחה)
-const int   RELEASE_MS        = 250;     // אחרי M 0: הסליל נפרק והאבן משתחררת לפני התנועה הבאה
+const int   RELEASE_MS        = 500;     // אחרי M 0: הסליל נפרק והאבן משתחררת לפני התנועה הבאה (12.11: 250 לא הספיק)
+const int   GRAB_MS           = 300;     // אחרי M 1: האבן מתמרכזת מעל המגנט לפני התנועה
 // פרופיל חופשי (א"מ כבוי). משתנה בפקודה F
 float freeMaxSteps   = 150.0 * STEPS_PER_MM;   // 150 מ"מ/ש'
 float freeAccelSteps = 1200.0 * STEPS_PER_MM;  // 1200 מ"מ/ש²
@@ -343,6 +344,7 @@ void execute(String cmd) {
     case 'M':
       if (cmd.substring(1).toInt() != 0) {
         bool ok = mag.on();
+        if (ok) delay(GRAB_MS);
         Serial.printf("# magnet heat %d%%\n", mag.heatPercent());
         reply(ok ? nullptr : "MAG_HOT");
       } else {

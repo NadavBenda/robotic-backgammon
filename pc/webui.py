@@ -48,7 +48,7 @@ button.sec{background:transparent;color:var(--ink);border:1px solid var(--line)}
 svg{width:100%;height:auto;display:block}
 .warn{color:var(--warn);font-size:13px}
 table{width:100%;border-collapse:collapse;font-size:13px}td{padding:3px 4px;border-bottom:1px solid var(--line)}
-#photo{width:100%;border-radius:8px;display:none;margin-top:8px}
+#photo,.photo2{width:100%;border-radius:8px;display:none;margin-top:8px}
 .grid{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center}
 .stats{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:13px;margin-top:6px}
 </style></head><body><main>
@@ -67,8 +67,9 @@ table{width:100%;border-collapse:collapse;font-size:13px}td{padding:3px 4px;bord
   <div class="card"><h1>Settings</h1><div class="mute">Used from the next New game.</div>
    <div class="grid" id="settings" style="margin-top:8px"></div></div>
   <div class="card"><h1>Moves</h1><table id="hist"></table></div>
-  <div class="card"><h1>Camera</h1><div class="mute">Last photo, circles = checkers found.</div>
-   <img id="photo" alt="last photo"></div>
+  <div class="card"><h1>Camera</h1><div class="mute">Last photo, circles = checkers found.
+   Below: the same photo straightened to a view from above (1 px = 1 mm).</div>
+   <img id="photo" alt="last photo"><img id="top" class="photo2" alt="top view"></div>
 </section></main>
 <script>
 const OPTS={mode:["robot_vs_human","robot_vs_robot","watch"],engine:["gnubg","simple","random"],
@@ -123,7 +124,8 @@ function render(s){S=s;if(!built){buildSettings(s.settings);built=true}
  for(const m of s.history.slice().reverse())t.append(el("tr",{},[el("td",{text:m.n}),el("td",{text:m.who}),
   el("td",{text:m.dice.join("-")}),el("td",{text:m.move}),el("td",{class:"mute",text:m.note||""})]));
  if(s.has_photo&&s.photo_t!==lastPhoto){lastPhoto=s.photo_t;const im=document.getElementById("photo");
-  im.src="/photo.jpg?t="+s.photo_t;im.style.display="block"}}
+  im.src="/photo.jpg?t="+s.photo_t;im.style.display="block";
+  const tp=document.getElementById("top");tp.src="/top.jpg?t="+s.photo_t;tp.style.display="block"}}
 async function tick(){try{render(await (await fetch("/state")).json())}catch(e){}setTimeout(tick,500)}
 tick();
 </script></body></html>"""
@@ -150,6 +152,8 @@ def make_handler(game):
                 self._send(json.dumps(game.snapshot()).encode(), "application/json")
             elif path == "/photo.jpg" and game.photo:
                 self._send(game.photo, "image/jpeg")
+            elif path == "/top.jpg" and getattr(game, "photo_top", None):
+                self._send(game.photo_top, "image/jpeg")
             else:
                 self._send(b"not found", "text/plain", 404)
 
