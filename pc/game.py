@@ -511,6 +511,8 @@ class Game:
                 if self.is_sim:
                     raise OSError
                 self.model = vision.Model.load()
+                if self.s["vision"] == "norm" and not self.model.norm:
+                    raise ValueError("colours saved before the norm method: learn again")
             except (OSError, ValueError, KeyError):
                 self.say("Put the checkers in the opening position, then press Learn colours",
                          "setup", ["learn"])
@@ -519,8 +521,8 @@ class Game:
                 self.learn_colours()
         r, _ = self.look()
         if r.board != rules.OPENING:
-            self.say("The board is not in the opening position: " + "; ".join(r.warnings[:2]),
-                     "setup", ["arrange", "reread", "accept"])
+            self.say("The board is not in the opening position: " + "; ".join(r.warnings[:2])
+                     + ". If it is, press Learn colours", "setup", ["learn", "arrange", "reread", "accept"])
             while r.board != rules.OPENING:
                 a = self.wait("arrange", "reread", "accept", "learn")
                 if a["name"] == "accept":
