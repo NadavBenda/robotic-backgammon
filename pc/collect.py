@@ -13,7 +13,8 @@ Steps (the photo window tells you what to press at each one):
   4. Check: the photo with a circle where every checker should be. Enter = right.
      If a checker is outside its circle: push it into the circle by hand, press f
      (the robot looks again).
-  5. The robot moves one checker at a time and takes a photo after each move. Some
+  5. The robot moves one checker at a time and takes a photo after each move. Before
+     each move the window shows a yellow arrow: which checker, and the way it will go. Some
      are put a few mm off centre on purpose (a person's sloppy placement).
      After each move it compares the photo with the one before: if more changed than
      the move explains (a checker dropped, pushed or left behind) it stops and shows
@@ -116,8 +117,9 @@ class Collector:
         with open(self.folder / "labels.jsonl", "a", encoding="utf-8") as f:
             f.write(json.dumps(rec) + "\n")
 
-    def drawing(self, img, mark=None):
-        """Top view with a circle where every checker should be (the moved one thicker)."""
+    def drawing(self, img, mark=None, arrow=None):
+        """Top view with a circle where every checker should be (the moved one thicker),
+        and arrow = [xy, ...]: the drag about to be made (its planned path)."""
         import calib
         top, f = calib.view(img, self.c, xmax=self.L.xmax, ymax=self.L.ymax)
         r = int(round(self.L.checker / 2 * f.k))
@@ -125,6 +127,13 @@ class Collector:
             u, v = f.mm_to_px(x, y)
             thick = 4 if mark is not None and np.hypot(x - mark[0], y - mark[1]) < 1 else 2
             cv2.circle(top, (int(u), int(v)), r, COLOURS[side], thick, cv2.LINE_AA)
+        if arrow is not None:
+            P = [tuple(int(t) for t in f.mm_to_px(*q)) for q in arrow]
+            cv2.circle(top, P[0], r + 4, (0, 230, 255), 3, cv2.LINE_AA)
+            for a, z in zip(P[:-2], P[1:-1]):
+                cv2.line(top, a, z, (0, 230, 255), 4, cv2.LINE_AA)
+            cv2.arrowedLine(top, P[-2], P[-1], (0, 230, 255), 4, cv2.LINE_AA,
+                            tipLength=min(0.5, 30 / max(1.0, float(np.hypot(P[-1][0] - P[-2][0], P[-1][1] - P[-2][1])))))
         return top
 
     def key(self, view, lines, keys, default):
@@ -218,6 +227,16 @@ class Collector:
     def step(self):
         """One random move + photo + check. False = stop."""
         frm, to, side, goal, off = self.random_move()
+        what = f"move {self.n}: {frm} -> {to}" + (f" ({off:.0f} mm off centre)" if off else "")
+        # show the move about to be made (Nadav 13.11): the same checker move_checker takes,
+        # the one of the place nearest the middle lane
+        lst = self.ex.places[frm]
+        mid = self.L.xmax / 2
+        src = tuple(min(lst, key=lambda q: abs(self.L.from_magnet(*q)[0] - mid)))
+        others = [p for p in self.ex.all_xy() if np.hypot(p[0] - src[0], p[1] - src[1]) > 1]
+        path = self.ex.plan(src, goal, others)[0]
+        if self.peek(self.drawing(self.prev, arrow=path), ["next: " + what, "q = stop (before this move)"]):
+            return False
         b0 = self.board()
         self.ex.move_checker(frm, to, side, goal=goal)
         b1 = self.board()
@@ -225,7 +244,6 @@ class Collector:
         img = self.photo()
         changed, _ = vision.slot_changes(self.prev, img, self.c, self.L)
         cost = vision.change_cost(changed, self.L, b0, b1)
-        what = f"move {self.n}: {frm} -> {to}" + (f" ({off:.0f} mm off centre)" if off else "")
         self.log(f"   {what}   change check {cost}")
         note = ""
         if cost >= STOP_COST:
