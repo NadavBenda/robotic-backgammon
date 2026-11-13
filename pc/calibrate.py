@@ -119,12 +119,13 @@ def aside(x, y, args):
     """Where the cart waits for the photo of a checker at (x, y), magnet off: 40 mm further
     out in y (away from the middle of the board, where the camera looks up from the
     mirror), so the cart and its rail are never between the camera and the checker.
-    At the edge rows there is no room: the cart goes to the opposite edge instead."""
+    Near y = 0 there is no room outward: 40 mm inward (Nadav 13.11). Near y max: the
+    opposite edge."""
     mid = args.ymax / 2
     ty = y + AWAY_Y if y >= mid else y - AWAY_Y
     if 0 <= ty <= args.ymax:
         return x, ty
-    return x, (0.0 if y >= mid else args.ymax)
+    return (x, y + AWAY_Y) if y < mid else (x, 0.0)
 
 
 def run(args):
