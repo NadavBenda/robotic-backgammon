@@ -76,16 +76,20 @@ def _net(n_extra):
 
 
 class Detector:
-    def __init__(self, net=None, mu=None, sd=None):
-        self.net, self.mu, self.sd = net, mu, sd
+    def __init__(self, net=None, mu=None, sd=None, cols=None):
+        self.net, self.mu, self.sd, self.cols = net, mu, sd, cols   # cols: which feature columns it uses
 
     @classmethod
-    def train(cls, samples, epochs=12, seed=0, log=None):
-        """samples: [(images, extra, labels)] per photo (labels from learned.labels)."""
+    def train(cls, samples, epochs=12, seed=0, log=None, pixels_only=False):
+        """samples: [(images, extra, labels)] per photo (labels from learned.labels).
+        pixels_only: a control without the computed features (only where the slot is and
+        whether there is an empty photo), to see what the features add."""
         import torch
         torch.manual_seed(seed)
+        nf = samples[0][1].shape[1]
+        cols = [nf - 4, nf - 3, nf - 2, nf - 1] if pixels_only else list(range(nf))
         X = torch.from_numpy(np.concatenate([s[0] for s in samples]))
-        E = torch.from_numpy(np.concatenate([s[1] for s in samples]))
+        E = torch.from_numpy(np.concatenate([s[1] for s in samples])[:, cols])
         Y = torch.from_numpy(np.concatenate([s[2] for s in samples])).long()
         mu, sd = E.mean(0), E.std(0).clamp(min=0.05)
         mu[-2:], sd[-2:] = 0.0, 1.0     # empty-photo ratio and flag: switched by the augmentation below
@@ -117,12 +121,12 @@ class Detector:
             if log:
                 log(f"      epoch {ep + 1}/{epochs}  loss {tot / len(Y):.3f}")
         net.eval()
-        return cls(net, mu, sd)
+        return cls(net, mu, sd, cols)
 
     def probs(self, x, e):
         import torch
         with torch.no_grad():
-            e = (torch.from_numpy(e) - self.mu) / self.sd
+            e = (torch.from_numpy(e[:, self.cols]) - self.mu) / self.sd
             return torch.softmax(self.net(torch.from_numpy(x), e), 1).numpy()
 
     def find_x(self, x, e, L):
@@ -155,7 +159,7 @@ class Detector:
 
     def save(self, path=PATH):
         import torch
-        torch.save({"state": self.net.state_dict(), "mu": self.mu, "sd": self.sd}, str(path))
+        torch.save({"state": self.net.state_dict(), "mu": self.mu, "sd": self.sd, "cols": self.cols}, str(path))
 
     @classmethod
     def load(cls, path=PATH):
@@ -164,4 +168,4 @@ class Detector:
         net = _net(len(d["mu"]))
         net.load_state_dict(d["state"])
         net.eval()
-        return cls(net, d["mu"], d["sd"])
+        return cls(net, d["mu"], d["sd"], d.get("cols") or list(range(len(d["mu"]))))

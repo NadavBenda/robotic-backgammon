@@ -2,7 +2,8 @@
 
 Two small neural networks (one hidden layer each):
   presence: for every slot, is there a checker?  Input: what the slot looks like
-            against the glass around it, the same for its 4 neighbours (they hide it
+            against the glass around it, whether circle detection found a round
+            shape there, the same for its 4 neighbours (they hide it
             diagonally in the far rows), how far it is from the camera, and how it
             compares with the empty-board photo when there is one.
   colour:   for every point (column) that has checkers, whose are they? Input: the
@@ -44,6 +45,23 @@ def _mean_gray(g, c, xy, r=6.0):
     return g[v, u].astype(float).mean(1)
 
 
+HOUGH_PX_MM = 2.0
+
+
+def hough_centres(img, c, L):
+    """(K, 2) mm centres of the round shapes found in the top view (checker bottoms and rims)."""
+    import cv2
+    import calib
+    k, m = HOUGH_PX_MM, 20.0
+    top = calib.topdown(img, c, k, L.xmax, L.ymax, m)
+    g = cv2.medianBlur(cv2.cvtColor(top, cv2.COLOR_BGR2GRAY), 5)
+    cs = cv2.HoughCircles(g, cv2.HOUGH_GRADIENT, dp=1.2, minDist=18 * k, param1=100, param2=22,
+                          minRadius=int(7 * k), maxRadius=int(15 * k))
+    if cs is None:
+        return np.zeros((0, 2))
+    return cs[0][:, :2] / k - m
+
+
 def features(img, c, L, empty=None):
     """(N, F) one row per slot of slots(L)."""
     g = vision._gray(img)
@@ -55,6 +73,12 @@ def features(img, c, L, empty=None):
         cols.append(vision.norm_features(g, c, xy + np.array(d))[:, :2])
     smear = np.min([vision.norm_features(g, c, xy + d)[:, 0] for d in SMEAR], axis=0)
     cols.append(smear[:, None])
+    hc = hough_centres(img, c, L)            # Nadav 13.11: circle detection as one more input
+    if len(hc):
+        dd = np.hypot(xy[:, 0, None] - hc[None, :, 0], xy[:, 1, None] - hc[None, :, 1])
+        cols.append(np.stack([np.minimum(dd.min(1), 30.0) / 30.0, (dd < 10).sum(1)], 1))
+    else:
+        cols.append(np.tile([1.0, 0.0], (len(xy), 1)))
     cols.append(np.stack([xy[:, 0] / L.xmax, xy[:, 1] / L.ymax], 1))
     if empty is not None:
         ge = vision._gray(empty)
