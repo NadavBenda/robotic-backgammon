@@ -8,7 +8,7 @@ Two small neural networks (one hidden layer each):
             compares with the empty-board photo when there is one.
   colour:   for every point (column) that has checkers, whose are they? Input: the
             averages over its checkers + distance from the camera.
-Bars and bear-off trays: the place says whose.
+Bars and bear-off trays (15 places each): the place says whose.
 Then: at most 15 per colour (the least sure ones go first).
 
     import learned
@@ -33,6 +33,7 @@ def slots(L):
     """[(place, i, (x, y))] the slots the detector judges."""
     out = [(p, i, L.slot(p, i)) for p in range(1, 25) for i in range(DEPTH)]
     out += [(w, i, L.slot(w, i)) for w in ("bar_robot", "bar_human") for i in range(4)]
+    out += [(w, i, L.slot(w, i)) for w in ("off_robot", "off_human") for i in range(15)]   # bear-off trays
     return out
 
 
@@ -118,6 +119,11 @@ def colour_rows(F, present, L):
                                     [len(idx) / DEPTH]]))
         pts.append(p)
     return pts, np.array(rows).reshape(len(rows), -1)
+
+
+def full(r):
+    """A vision.Reading as 28 numbers: the board + (robot, human) in the trays."""
+    return list(r.board) + list(r.off)
 
 
 class MLP:
@@ -223,7 +229,8 @@ class Detector:
         return [(x, y, s) for _, x, y, s in out], out
 
     def board(self, F, L):
-        return vision.summarize(self.find_f(F, L)[0], L).board
+        """26 numbers + (robot, human) in the bear-off trays."""
+        return full(vision.summarize(self.find_f(F, L)[0], L))
 
     def colour_prob(self, F, present, L):
         """{point: P(robot)} for the points with present checkers."""

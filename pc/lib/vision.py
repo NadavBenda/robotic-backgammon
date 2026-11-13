@@ -552,6 +552,7 @@ def draw(img, c, r, L=None):
         u, v = c.mm_to_px(x, y)
         col = (0, 255, 0) if s == "robot" else (0, 165, 255)
         cv2.circle(out, (int(u), int(v)), 14, col, 2, cv2.LINE_AA)
+        cv2.drawMarker(out, (int(u), int(v)), col, cv2.MARKER_CROSS, 8, 1, cv2.LINE_AA)   # the centre
     return out
 
 

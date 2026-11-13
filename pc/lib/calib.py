@@ -193,7 +193,7 @@ def view(img, c, px_per_mm=PX_PER_MM, xmax=410.0, ymax=420.0, board=True):
     return top, f
 
 
-BOARD_ALPHA = 0.35
+BOARD_ALPHA = 0.15     # Nadav 13.11: 0.35 hid the photo too much
 
 
 def draw_board(top, f, L, alpha=BOARD_ALPHA):
@@ -225,7 +225,7 @@ def draw_board(top, f, L, alpha=BOARD_ALPHA):
         x, y = L._nominal(p, 0)
         left = x < L.xmax / 2
         u, v = px((lane0 - 4) + 9 if left else (lane1 + 4) - 9, y)
-        cv2.putText(out, str(25 - p), (u - 9, v + 6), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2, cv2.LINE_AA)
+        cv2.putText(out, str(25 - p), (u - 9, v + 6), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (235, 235, 235), 1, cv2.LINE_AA)
     return out
 
 
