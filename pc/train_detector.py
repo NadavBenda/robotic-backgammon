@@ -23,6 +23,7 @@ import cv2
 import numpy as np
 
 import cnn
+import ensemble
 import learned
 import ui
 import vision
@@ -50,6 +51,18 @@ def imread(p):
 
 def wrong(a, b):
     return int(sum(abs(x - y) for x, y in zip(a[:26], b[:26])))
+
+
+def mistakes(a, b):
+    """{place: 'colour' | 'count'} where board a differs from the true board b
+    (place = the person's column number, or 'bar')."""
+    out = {}
+    for i in range(26):
+        if a[i] == b[i]:
+            continue
+        name = "bar" if i in (0, 25) else 25 - i
+        out[name] = "colour" if a[i] * b[i] < 0 else "count"
+    return out
 
 
 def load_runs(c, L, log=print):
@@ -111,15 +124,20 @@ def evaluate(runs, c, L, log=print):
         ph = runs[0]["photos"]
         cut = max(1, int(len(ph) * 0.7))
         tests.append((runs[0]["name"] + " (last 30%)", ph[:cut], ph[cut:] or ph[-1:]))
-    tot_l, tot_n, tot_c, tot_p = [], [], [], []
+    tot_l, tot_n, tot_c, tot_p, tot_e = [], [], [], [], []
+    errs = {"features-net": [], "pixel+features-net": [], "both together": []}   # [(photo id, {place: kind})]
     for name, train, test in tests:
         det = learned.Detector.train(samples(train), L)
         el = [wrong(det.board(p["F0"], L), p["board"]) for p in test]
+        errs["features-net"] += [((name, j), mistakes(det.board(p["F0"], L), p["board"])) for j, p in enumerate(test)]
+        seeds = [np.mean([wrong(learned.Detector.train(samples(train), L, seed=sd).board(p["F0"], L), p["board"])
+                          for p in test]) for sd in (1, 2)]
         en = norm_errors([train[0]] + test, c, L)[1:] if len(runs) < 2 else norm_errors(test, c, L)
         tot_l += el
         tot_n += en
         line = (f"   {name}: {len(test)} photos   features-net {np.mean(el):.1f} wrong/photo "
-                f"({sum(e == 0 for e in el)} perfect)   norm {np.mean(en):.1f} ({sum(e == 0 for e in en)} perfect)")
+                f"({sum(e == 0 for e in el)} perfect; trained again: {seeds[0]:.1f}, {seeds[1]:.1f})"
+                f"   norm {np.mean(en):.1f} ({sum(e == 0 for e in en)} perfect)")
         if USE_CNN:
             log("   training the pixel network (a few minutes)...")
             cd = cnn.Detector.train(cnn_samples(train, L))
@@ -127,14 +145,45 @@ def evaluate(runs, c, L, log=print):
                   for (x, e, _), p in zip(cnn_samples(test, L, with_empty=False), test)]
             tot_c += ec
             line += f"   pixel+features-net {np.mean(ec):.1f} ({sum(e == 0 for e in ec)} perfect)"
+            cs = cnn_samples(test, L, with_empty=False)
+            errs["pixel+features-net"] += [((name, j), mistakes(cd.board(x, e, L), p["board"]))
+                                           for j, ((x, e, _), p) in enumerate(zip(cs, test))]
+            eb = [vision.summarize(ensemble.find(det, cd, p["F0"], x, e, L), L).board
+                  for (x, e, _), p in zip(cs, test)]
+            ee = [wrong(b, p["board"]) for b, p in zip(eb, test)]
+            tot_e += ee
+            errs["both together"] += [((name, j), mistakes(b, p["board"])) for j, (b, p) in enumerate(zip(eb, test))]
+            line += f"   both together {np.mean(ee):.1f} ({sum(e == 0 for e in ee)} perfect)"
             pd = cnn.Detector.train(cnn_samples(train, L), pixels_only=True)
             ep = [wrong(pd.board(x, e, L), p["board"])
                   for (x, e, _), p in zip(cnn_samples(test, L, with_empty=False), test)]
             tot_p += ep
             line += f"   pixels-only {np.mean(ep):.1f}"
         log(line)
+    explain(errs, log)
     return (float(np.mean(tot_l)), float(np.mean(tot_n)), (float(np.mean(tot_c)) if tot_c else None),
-            (float(np.mean(tot_p)) if tot_p else None))
+            (float(np.mean(tot_p)) if tot_p else None), (float(np.mean(tot_e)) if tot_e else None))
+
+
+def explain(errs, log=print):
+    """Where each method goes wrong, and whether the two networks make the same mistakes."""
+    log("\nWhere the mistakes are (photo + column counted once):")
+    for m, lst in errs.items():
+        if not lst:
+            continue
+        kinds = [k for _, d in lst for k in d.values()]
+        cols = {}
+        for _, d in lst:
+            for place in d:
+                cols[place] = cols.get(place, 0) + 1
+        top = ", ".join(f"{p}: {n}" for p, n in sorted(cols.items(), key=lambda t: -t[1])[:6])
+        log(f"   {m}: {len(kinds)} mistakes, {kinds.count('count')} wrong count, "
+            f"{kinds.count('colour')} wrong colour.  Most in columns: {top}")
+    a = {(pid, pl) for pid, d in errs["features-net"] for pl in d}
+    b = {(pid, pl) for pid, d in errs["pixel+features-net"] for pl in d}
+    if a and b:
+        log(f"   Same mistake in both networks: {len(a & b)}; only features-net: {len(a - b)}; "
+            f"only pixel+features-net: {len(b - a)}")
 
 
 def main():
@@ -152,7 +201,7 @@ def report(c, L, save=True):
         return
     n = sum(len(r["photos"]) for r in runs)
     print(f"{n} photos in {len(runs)} run(s). Checking on photos it did not learn from:")
-    ml, mn, mc, mp = evaluate(runs, c, L)
+    ml, mn, mc, mp, me = evaluate(runs, c, L)
     allp = [p for r in runs for p in r["photos"]]
     det = learned.Detector.train(samples(allp), L)
     if save:
@@ -163,6 +212,7 @@ def report(c, L, save=True):
     if mc is not None:
         print(f"   pixel+features-net  {mc:.1f}   -> vision = cnn")
         print(f"   pixels-only         {mp:.1f}   (a control: what the computed features add)")
+        print(f"   both together       {me:.1f}   (features-net + pixel+features-net averaged)")
         print("Training the pixel network on everything...")
         cd = cnn.Detector.train(cnn_samples(allp, L))
         if save:

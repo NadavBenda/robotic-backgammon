@@ -343,6 +343,16 @@ _detector = {}
 
 
 def read(img, c, L, model, method="scan"):
+    if method == "both":      # learned + cnn averaged (lib/ensemble.py)
+        import cnn
+        import ensemble
+        import learned
+        if "d" not in _detector:
+            read(img, c, L, model, "learned")   # loads detector.json (or says it is missing)
+        if "cnn" not in _detector:
+            read(img, c, L, model, "cnn")
+        x, e = cnn.inputs(img, c, L)
+        return summarize(ensemble.find(_detector["d"], _detector["cnn"], learned.features(img, c, L), x, e, L), L)
     if method == "cnn":       # detector_cnn.pt from train_detector.py (needs PyTorch)
         import cnn
         if "cnn" not in _detector:
