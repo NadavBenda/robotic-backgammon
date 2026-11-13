@@ -339,7 +339,18 @@ def find_norm(img, c, L, model, depth=7):
     return found, sorted(set(map(str, hidden)))
 
 
+_detector = {}
+
+
 def read(img, c, L, model, method="scan"):
+    if method == "learned":   # detector.json from train_detector.py
+        import learned
+        if "d" not in _detector:
+            try:
+                _detector["d"] = learned.Detector.load()
+            except OSError:
+                raise ValueError("no detector.json yet: run collect.py, then train_detector.py") from None
+        return summarize(_detector["d"].find(img, c, L)[0], L)
     if method == "norm":
         ck, hidden = find_norm(img, c, L, model)
         r = summarize(ck, L)

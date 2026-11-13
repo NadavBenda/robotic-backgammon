@@ -14,6 +14,7 @@ Talks to `firmware/board` over USB serial (no Wi-Fi). Needs `pip install pyseria
 | `teach_layout.py` | fit the board map to the real board in 4 clicks |
 | `place_opening.py` | set up the opening position with the cart showing where |
 | `collect.py` | labelled photos for checker detection: the robot moves checkers at random and photographs each position (saved in dataset/, not uploaded) |
+| `train_detector.py` | teaches the learned checker detector from those photos, compares it with norm, saves detector.json (used only when vision = learned) |
 | `move.py` | move single checkers by clicking, with planned paths |
 | `swap.py` | demo: swap two checkers |
 | `drag_test.py` | find the fastest drag speed that holds |
