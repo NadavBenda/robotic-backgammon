@@ -177,11 +177,56 @@ class Flat:
         return (np.asarray(x, float) + self.m) * self.k, (np.asarray(y, float) + self.m) * self.k
 
 
-def view(img, c, px_per_mm=PX_PER_MM, xmax=410.0, ymax=420.0):
+def view(img, c, px_per_mm=PX_PER_MM, xmax=410.0, ymax=420.0, board=True):
     """The photo corrected to a top view, and the pixel <-> mm map of that picture
-    (use it wherever the raw photo's Calib was used: clicks, drawing)."""
+    (use it wherever the raw photo's Calib was used: clicks, drawing).
+    board: the game's board drawing (column triangles, numbers, bar, trays) laid over it,
+    see-through, so the photo and the layout show together (Nadav 13.11)."""
     f = Flat(c, px_per_mm)
-    return topdown(img, c, px_per_mm, xmax, ymax, f.m), f
+    top = topdown(img, c, px_per_mm, xmax, ymax, f.m)
+    if board:
+        try:
+            from layout import Layout
+            top = draw_board(top, f, Layout.load())
+        except Exception:   # never lose the photo over the drawing
+            pass
+    return top, f
+
+
+BOARD_ALPHA = 0.35
+
+
+def draw_board(top, f, L, alpha=BOARD_ALPHA):
+    """The game page's board drawing over a top view: a triangle per column (the person's
+    numbers), the bar row and the bear-off tray places, blended at alpha."""
+    import cv2
+    over = top.copy()
+    r = L.checker / 2
+    px = lambda x, y: tuple(int(round(float(t))) for t in f.mm_to_px(*L.to_magnet(x, y)))  # noqa: E731
+    lane0, lane1 = L.lane_x()
+    for p in range(1, 25):
+        x, y = L._nominal(p, 0)
+        left = x < L.xmax / 2
+        base = x - r if left else x + r
+        tip = lane0 - 4 if left else lane1 + 4
+        tri = np.array([px(base, y - r + 1), px(base, y + r - 1), px(tip, y)], np.int32)
+        cv2.fillPoly(over, [tri], (124, 167, 201) if (25 - p) % 2 else (67, 106, 143), cv2.LINE_AA)
+        u, v = px(tip + 9 if left else tip - 9, y)   # the number in the free middle lane
+        cv2.putText(over, str(25 - p), (u - 9, v + 6), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2, cv2.LINE_AA)
+    by = L._row_y(6)
+    a, b = px(-2, by - r), px(L.xmax + 2, by + r)
+    cv2.rectangle(over, (min(a[0], b[0]), min(a[1], b[1])), (max(a[0], b[0]), max(a[1], b[1])), (184, 198, 207), -1)
+    for side in ("off_robot", "off_human"):
+        for i in range(14):
+            u, v = px(*L._nominal(side, i))
+            cv2.circle(over, (u, v), int(r * f.k), (200, 200, 200), 1, cv2.LINE_AA)
+    out = cv2.addWeighted(over, alpha, top, 1 - alpha, 0)
+    for p in range(1, 25):   # numbers fully visible
+        x, y = L._nominal(p, 0)
+        left = x < L.xmax / 2
+        u, v = px((lane0 - 4) + 9 if left else (lane1 + 4) - 9, y)
+        cv2.putText(out, str(25 - p), (u - 9, v + 6), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2, cv2.LINE_AA)
+    return out
 
 
 def corrected(img, path=PATH):

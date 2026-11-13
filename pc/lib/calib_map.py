@@ -29,7 +29,7 @@ def _colour(e):
 def draw(c, photo=None, xmax=410.0, ymax=420.0):
     flat = calib.Flat(c)
     if photo is not None:
-        out = calib.view(photo, c, xmax=xmax, ymax=ymax)[0]
+        out = calib.view(photo, c, xmax=xmax, ymax=ymax, board=False)[0]
         out = (out * 0.6).astype(np.uint8)
     else:
         w, h = int((xmax + 2 * flat.m) * K), int((ymax + 2 * flat.m) * K)

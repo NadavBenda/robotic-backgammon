@@ -47,7 +47,7 @@ def main():
         b.home_if_needed()
         b.move(*L.park())
         img, _ = photo(b)
-    img, c = calib.view(img, cal, xmax=L.xmax, ymax=L.ymax)   # corrected top view
+    img, c = calib.view(img, cal, xmax=L.xmax, ymax=L.ymax, board=False)   # corrected top view
     pick = ask(overlay(img, c, L), None, "Does the map sit on the board? q = yes, done.  click = no, fix it",
                (c.px_to_mm, c.mm_to_px), "click anywhere = fix   q = done")
     if pick == "quit":
