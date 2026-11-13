@@ -262,6 +262,10 @@ class _Warped:
     def mm_to_px(self, x, y):
         x, y = np.asarray(x, float), np.asarray(y, float)
         A = self.A
+        if A.shape == (3, 3):   # homography: the offset grows toward the far side
+            w = A[2, 0] * x + A[2, 1] * y + A[2, 2]
+            return self.c.mm_to_px((A[0, 0] * x + A[0, 1] * y + A[0, 2]) / w,
+                                   (A[1, 0] * x + A[1, 1] * y + A[1, 2]) / w)
         return self.c.mm_to_px(A[0, 0] * x + A[0, 1] * y + A[0, 2], A[1, 0] * x + A[1, 1] * y + A[1, 2])
 
 
@@ -274,8 +278,8 @@ def _view(c, n):
     return c
 
 
-def find_warp(g, c, L, board, reach=12.0, step=2.0):
-    """2x3 affine (mm -> mm) that moves each checker of a known board onto the darkest spot
+def find_warp(g, c, L, board, reach=20.0, step=2.0, kind="affine"):
+    """2x3 affine or 3x3 homography (mm -> mm) that moves each checker of a known board onto the darkest spot
     within `reach` mm of its slot (darkness = disc / glass). None if it does not help."""
     placed = [xy for xy, _ in L.place(board).values()]
     offs = np.arange(-reach, reach + 0.1, step)
@@ -293,7 +297,10 @@ def find_warp(g, c, L, board, reach=12.0, step=2.0):
     if len(src) < 8:
         return None
     src, dst = np.float32(src), np.float32(dst)
-    A, inl = cv2.estimateAffine2D(src, dst, ransacReprojThreshold=6.0)
+    if kind == "homography":
+        A, _ = cv2.findHomography(src, dst, cv2.RANSAC, 6.0)
+    else:
+        A, _ = cv2.estimateAffine2D(src, dst, ransacReprojThreshold=6.0)
     return None if A is None else A.tolist()
 
 
@@ -315,10 +322,12 @@ def learn_norm(img, c, L, board):
     (on the real board the best-contrast shift was sometimes worse than none)."""
     g = _gray(img)
     du, dv = find_shift(g, c, L, board)
-    warp = find_warp(g, c, L, board)
     tries = [(None, sh) for sh in dict.fromkeys([(0, 0), (round(du / 2), round(dv / 2)), (du, dv)])]
-    if warp is not None:
-        tries.append((warp, (0, 0)))   # the warp already contains any shift
+    for kind in ("affine", "homography"):
+        for reach in (12.0, 20.0):
+            warp = find_warp(g, c, L, board, reach=reach, kind=kind)
+            if warp is not None:
+                tries.append((warp, (0, 0)))   # the warp already contains any shift
     best = None
     for w, sh in tries:
         n = _learn_norm_at(g, c, L, board, *sh, warp=w)
