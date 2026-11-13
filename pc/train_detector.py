@@ -50,17 +50,18 @@ def imread(p):
 
 
 def wrong(a, b):
-    return int(sum(abs(x - y) for x, y in zip(a[:26], b[:26])))
+    """Checkers that differ between two 28-number boards (board + both trays)."""
+    return int(sum(abs(x - y) for x, y in zip(a, b)))
 
 
 def mistakes(a, b):
     """{place: 'colour' | 'count'} where board a differs from the true board b
     (place = the person's column number, or 'bar')."""
     out = {}
-    for i in range(26):
+    for i in range(len(b)):
         if a[i] == b[i]:
             continue
-        name = "bar" if i in (0, 25) else 25 - i
+        name = "bar" if i in (0, 25) else "off" if i >= 26 else 25 - i
         out[name] = "colour" if a[i] * b[i] < 0 else "count"
     return out
 
@@ -82,7 +83,8 @@ def load_runs(c, L, log=print):
             y = learned.labels(rec["checkers"], L)
             F0 = learned.features(img, c, L, None)
             F = learned.features(img, c, L, empty) if empty is not None else F0
-            ph = {"img": img, "board": rec["board"], "F": F, "F0": F0, "y": y, "note": rec.get("note", "")}
+            board = rec["board"] + [sum(1 for k in rec["checkers"] if k[3] == f"off_{s}") for s in ("robot", "human")]
+            ph = {"img": img, "board": board, "F": F, "F0": F0, "y": y, "note": rec.get("note", "")}
             if USE_CNN:
                 ph["crop"] = cnn.crops(img, c, L).astype(np.float16)
                 ph["empty"] = ecrop
@@ -105,12 +107,12 @@ def samples(photos):
 def norm_errors(photos, c, L):
     """The current method: Learn colours on the run's first photo (a known board), read the rest."""
     first = photos[0]
-    n = vision.learn_norm(first["img"], c, L, first["board"])
+    n = vision.learn_norm(first["img"], c, L, first["board"][:26])
     model = type("M", (), {"norm": n})()
     out = []
     for p in photos:
         ck, _ = vision.find_norm(p["img"], c, L, model)
-        out.append(wrong(vision.summarize(ck, L).board, p["board"]))
+        out.append(wrong(learned.full(vision.summarize(ck, L)), p["board"]))
     return out
 
 
@@ -148,7 +150,7 @@ def evaluate(runs, c, L, log=print):
             cs = cnn_samples(test, L, with_empty=False)
             errs["pixel+features-net"] += [((name, j), mistakes(cd.board(x, e, L), p["board"]))
                                            for j, ((x, e, _), p) in enumerate(zip(cs, test))]
-            eb = [vision.summarize(ensemble.find(det, cd, p["F0"], x, e, L), L).board
+            eb = [learned.full(vision.summarize(ensemble.find(det, cd, p["F0"], x, e, L), L))
                   for (x, e, _), p in zip(cs, test)]
             ee = [wrong(b, p["board"]) for b, p in zip(eb, test)]
             tot_e += ee
@@ -162,7 +164,19 @@ def evaluate(runs, c, L, log=print):
         log(line)
     explain(errs, log)
     return (float(np.mean(tot_l)), float(np.mean(tot_n)), (float(np.mean(tot_c)) if tot_c else None),
-            (float(np.mean(tot_p)) if tot_p else None), (float(np.mean(tot_e)) if tot_e else None))
+            (float(np.mean(tot_p)) if tot_p else None), (float(np.mean(tot_e)) if tot_e else None), weak(errs))
+
+
+def weak(errs):
+    """{place: mistakes} of the features-net on photos it did not learn from, for
+    collect.py to put more checkers where the detector goes wrong. Place: 1..24 (robot
+    numbering, as collect uses), 'bar' or 'off'."""
+    out = {}
+    for _, d in errs["features-net"]:
+        for name in d:
+            k = 25 - name if isinstance(name, int) else name
+            out[k] = out.get(k, 0) + 1
+    return out
 
 
 def explain(errs, log=print):
@@ -201,11 +215,11 @@ def report(c, L, save=True):
         return
     n = sum(len(r["photos"]) for r in runs)
     print(f"{n} photos in {len(runs)} run(s). Checking on photos it did not learn from:")
-    ml, mn, mc, mp, me = evaluate(runs, c, L)
+    ml, mn, mc, mp, me, wk = evaluate(runs, c, L)
     allp = [p for r in runs for p in r["photos"]]
     det = learned.Detector.train(samples(allp), L)
     if save:
-        det.save(photos=n, runs=len(runs), learned_wrong=ml, norm_wrong=mn, cnn_wrong=mc)
+        det.save(photos=n, runs=len(runs), learned_wrong=ml, norm_wrong=mn, cnn_wrong=mc, weak=wk)
     print(f"\nAverage wrong checkers per photo (on photos it did not learn from):")
     print(f"   norm (now in use)   {mn:.1f}")
     print(f"   features-net        {ml:.1f}   -> vision = learned")

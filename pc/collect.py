@@ -15,10 +15,18 @@ Steps (the photo window tells you what to press at each one):
      (the robot looks again).
   5. The robot moves one checker at a time and takes a photo after each move. Before
      each move the window shows a yellow arrow: which checker, and the way it will go. Some
-     are put a few mm off centre on purpose (a person's sloppy placement).
+     are put a few mm off centre on purpose (a person's sloppy placement). Some go to the
+     bar or a bear-off tray, and come back from there.
+     Where to: 3 moves in 10 at random, the rest where dataset/ has the fewest photos
+     (that colour at that spot of the column), more where the last train_detector.py
+     made mistakes.
      After each move it compares the photo with the one before: if more changed than
-     the move explains (a checker dropped, pushed or left behind) it stops and shows
-     step 4 again. q in the photo window = stop after this move.
+     the move explains (a checker dropped, pushed or left behind), the trained detector
+     (detector.json, if there is one) reads the photo too. If it reads exactly the
+     expected position, the robot goes on (a false alarm). Otherwise it stops and shows
+     step 4 again, with the camera's reading as dots and red rings where it differs:
+     d = the dots are right (the robot goes on from what the camera sees; you confirm
+     the new circles with Enter). q in the photo window = stop after this move.
   6. At the end: Enter = the robot puts everything back into the opening (for the next
      run), n = leave it as it is.
 
@@ -50,9 +58,64 @@ WIN = "collect"
 MAX_STACK = 6          # checkers per point (the 7th reaches into the lane)
 OFF_CENTRE_P = 0.3     # share of moves that put the checker a few mm off centre
 OFF_CENTRE_MM = (3.0, 7.0)
-BAR_P = 0.08           # share of moves to the bar
+BAR_P = 0.12           # share of moves to the bar (hit checkers)
+TRAY_P = 0.12          # share of moves to a bear-off tray
+BAR_MAX = 4            # checkers per bar half (the detector looks at 4 places)
+RANDOM_P = 0.3         # share of moves picked at random; the rest go where the dataset is thinnest
 STOP_COST = 2          # places that changed more / less than the move explains -> stop
 COLOURS = {"robot": (80, 220, 80), "human": (0, 165, 255)}
+DIFF = (60, 60, 255)   # red: where the camera reads something else
+
+
+def add_counts(cnt, checkers):
+    """cnt[(place, i, side)] += 1 for every checker of one photo (i = its place in the
+    column / bar / tray, 0 = the edge)."""
+    seen = {}
+    for _, _, side, where in checkers:
+        i = seen[where] = seen.get(where, -1) + 1
+        cnt[(where, i, side)] = cnt.get((where, i, side), 0) + 1
+
+
+def coverage():
+    """{(place, i, side): photos} over everything in dataset/ so far."""
+    cnt = {}
+    for lab in DATA.glob("*/labels.jsonl"):
+        for line in lab.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                add_counts(cnt, json.loads(line)["checkers"])
+    return cnt
+
+
+def weak_places():
+    """{place: mistakes} where the last training's detector went wrong (detector.json)."""
+    try:
+        import learned
+        w = json.loads(learned.PATH.read_text()).get("weak") or {}
+    except (OSError, ValueError, ImportError):
+        return {}
+    return {(int(k) if str(k).isdigit() else k): v for k, v in w.items()}
+
+
+def where_of(L, x, y):
+    """Place key of a checker at magnet (x, y): 1..24, bar_*, off_*, or None."""
+    k = L.nearest(x, y)
+    if k is None:
+        return None
+    return k[1] if k[0] == "point" else f"{k[0]}_{k[1]}"
+
+
+def full_board(board, checkers):
+    """The 26-number board + (robot, human) in the bear-off trays."""
+    return list(board) + [sum(1 for c in checkers if c[3] == f"off_{s}") for s in ("robot", "human")]
+
+
+def place_name(i):
+    """The person's name for board index i (0..27)."""
+    if i in (0, 25):
+        return "bar"
+    if i in (26, 27):
+        return "tray " + ("robot" if i == 26 else "human")
+    return f"column {25 - i}"
 
 
 class Collector:
@@ -63,6 +126,9 @@ class Collector:
         self.ex = Executor(b, L, log=lambda *a: None, grab_s=0.0 if auto else 0.3)
         self.n = 0
         self.prev = None
+        self.cov = {} if auto else coverage()
+        self.weak = {} if auto else weak_places()
+        self._det = None
         self.folder.mkdir(parents=True, exist_ok=True)
 
     # -- position ------------------------------------------------------------
@@ -114,19 +180,32 @@ class Collector:
             return
         rec = {"photo": name, "time": datetime.now().isoformat(timespec="seconds"),
                "board": self.board(), "checkers": self.checkers(), "note": note}
+        add_counts(self.cov, rec["checkers"])
         with open(self.folder / "labels.jsonl", "a", encoding="utf-8") as f:
             f.write(json.dumps(rec) + "\n")
 
-    def drawing(self, img, mark=None, arrow=None):
-        """Top view with a circle where every checker should be (the moved one thicker),
-        and arrow = [xy, ...]: the drag about to be made (its planned path)."""
+    def drawing(self, img, mark=None, arrow=None, seen=None):
+        """Top view with a circle where every checker should be (the moved one thicker,
+        a small cross at each centre), arrow = [xy, ...]: the drag about to be made (its
+        planned path), seen = the camera's reading (dots; red ring where it differs)."""
         import calib
         top, f = calib.view(img, self.c, xmax=self.L.xmax, ymax=self.L.ymax)
         r = int(round(self.L.checker / 2 * f.k))
         for x, y, side, _ in self.checkers():
-            u, v = f.mm_to_px(x, y)
+            u, v = (int(t) for t in f.mm_to_px(x, y))
             thick = 4 if mark is not None and np.hypot(x - mark[0], y - mark[1]) < 1 else 2
-            cv2.circle(top, (int(u), int(v)), r, COLOURS[side], thick, cv2.LINE_AA)
+            cv2.circle(top, (u, v), r, COLOURS[side], thick, cv2.LINE_AA)
+            cv2.drawMarker(top, (u, v), COLOURS[side], cv2.MARKER_CROSS, 10, 1, cv2.LINE_AA)
+        if seen is not None:
+            bad = set(seen["diff"])
+            for x, y, side in seen["checkers"]:
+                u, v = (int(t) for t in f.mm_to_px(x, y))
+                cv2.circle(top, (u, v), 5, COLOURS[side], -1, cv2.LINE_AA)
+            both = [(x, y) for x, y, _ in seen["checkers"]] + [(x, y) for x, y, _, _ in self.checkers()]
+            for x, y in both:      # red ring: every checker (expected or seen) of a place that differs
+                if where_of(self.L, x, y) in bad:
+                    u, v = (int(t) for t in f.mm_to_px(x, y))
+                    cv2.circle(top, (u, v), r + 6, DIFF, 2, cv2.LINE_AA)
         if arrow is not None:
             P = [tuple(int(t) for t in f.mm_to_px(*q)) for q in arrow]
             cv2.circle(top, P[0], r + 4, (0, 230, 255), 3, cv2.LINE_AA)
@@ -154,17 +233,65 @@ class Collector:
         ui.show(WIN, ui.with_bar(view, lines))
         return (cv2.waitKey(30) & 0xFF) == ord("q")
 
-    def check(self, img, why, mark=None):
-        """Ask until the photo matches the drawing. Returns the photo to keep, or None (stop)."""
+    def check(self, img, why, mark=None, seen=None):
+        """Ask until the photo matches the drawing. Returns the photo to keep, or None (stop).
+        seen = the camera's reading (read()): shown as dots, and d takes it as the truth
+        (the drawing then shows it as circles, to be confirmed with Enter like any other)."""
         while True:
-            lines = [why, "Every checker inside its circle?  Enter=yes   "
-                     "f=I moved them into the circles, look again   q=stop"]
-            k = self.key(self.drawing(img, mark), lines, "\rfq", "\r")
+            lines = [why]
+            if seen is not None and seen["diff"]:
+                lines.append("Camera (dots) differs at: " + ", ".join(seen["text"][:4]))
+            lines.append("Every checker inside its circle?  Enter=yes   f=I moved them, look again"
+                         + ("   d=the dots are right" if seen is not None and seen["diff"] else "") + "   q=stop")
+            k = self.key(self.drawing(img, mark, seen=seen), lines, "\rfdq", "\r")
             if k == "\r":
                 return img
             if k == "q":
                 return None
+            if k == "d" and seen is not None and seen["diff"]:
+                self.take(seen["checkers"])
+                why, seen, mark = "The camera's reading is now the position: are the circles right?", None, None
+                continue
             img = self.photo()
+            seen = self.read(img) if seen is not None else None
+
+    # -- the trained detector ------------------------------------------------
+    def read(self, img):
+        """The trained detector's reading of a photo, against where the checkers should be:
+        {checkers: [(x, y, side)], diff: [place keys], text: [what differs]}, or None when
+        there is no detector.json yet (run train_detector.py)."""
+        if self._det is None:
+            try:
+                import learned
+                self._det = (learned.Detector.load(),)
+            except (OSError, ValueError, KeyError):
+                self._det = ()
+        if not self._det:
+            return None
+        e = self.folder / "empty_0.jpg"
+        empty = cv2.imdecode(np.fromfile(str(e), np.uint8), cv2.IMREAD_COLOR) if e.exists() else None
+        ck, _ = self._det[0].find(img, self.c, self.L, empty)
+        r = vision.summarize(ck, self.L)
+        got, want = list(r.board) + list(r.off), full_board(self.board(), self.checkers())
+        diff, text = [], []
+        for i, (a, b) in enumerate(zip(got, want)):
+            if a == b:
+                continue
+            key = (i if 1 <= i <= 24 else {0: "bar_robot", 25: "bar_human", 26: "off_robot", 27: "off_human"}[i])
+            diff.append(key)
+            tag = (lambda n: f"{abs(n)}{'R' if n > 0 else 'H' if n < 0 else ''}") if i < 26 else str
+            text.append(f"{place_name(i)} {tag(b)}->{tag(a)}")
+        return {"checkers": ck, "diff": diff, "text": text}
+
+    def take(self, ck):
+        """Make the camera's reading [(x, y, side)] the position the robot works from."""
+        state = []
+        for x, y, side in ck:
+            w = where_of(self.L, x, y)
+            if w is not None:
+                state.append([x, y, side, w])
+        self.set_state(state)
+        self.save_state()
 
     # -- steps ----------------------------------------------------------------
     def empty_board(self):
@@ -192,37 +319,65 @@ class Collector:
         self.save_state()
         return True
 
-    def random_move(self):
-        """(from, to, side, goal xy, off-centre mm or 0) of a random move that keeps each
-        point one colour and at most MAX_STACK high."""
-        ex, L = self.ex, self.L
-        sources = [w for w, lst in ex.places.items() if lst and not str(w).startswith(("off", "_"))]
-        for _ in range(100):
-            frm = self.rng.choice(sources)
+    def moves(self):
+        """[(from, to, side)] every move collect may make: one colour per column, at most
+        MAX_STACK high, BAR_MAX on a bar half, 15 in a tray."""
+        ex = self.ex
+        out = []
+        for frm, lst in ex.places.items():
+            if not lst or str(frm).startswith("_"):
+                continue
             side = ex.side_of[frm] if isinstance(frm, int) else frm.split("_")[1]
-            bar = f"bar_{side}"
-            if frm != bar and self.rng.random() < BAR_P and len(ex.places.get(bar, [])) < 3:
-                to = bar
-            else:
-                tos = [p for p in range(1, 25) if p != frm and len(ex.places.get(p, [])) < MAX_STACK
-                       and (not ex.places.get(p) or ex.side_of.get(p) == side)]
-                if not tos:
-                    continue
-                to = self.rng.choice(tos)
-            goal = ex._free_slot(to)
-            off = 0.0
-            if self.rng.random() < OFF_CENTRE_P:
-                others = [p for p in ex.all_xy()]
-                for _ in range(20):
-                    r = self.rng.uniform(*OFF_CENTRE_MM)
-                    a = self.rng.uniform(0, 2 * np.pi)
-                    q = (goal[0] + r * np.cos(a), goal[1] + r * np.sin(a))
-                    if (4 <= q[0] <= L.xmax - 4 and 4 <= q[1] <= L.ymax - 4
-                            and all(np.hypot(q[0] - o[0], q[1] - o[1]) >= L.checker + 1 for o in others)):
-                        goal, off = q, r
-                        break
-            return frm, to, side, tuple(goal), off
-        raise RuntimeError("no possible random move")
+            for to in range(1, 25):
+                if to != frm and len(ex.places.get(to, [])) < MAX_STACK and \
+                        (not ex.places.get(to) or ex.side_of.get(to) == side):
+                    out.append((frm, to, side))
+            for to, cap in ((f"bar_{side}", BAR_MAX), (f"off_{side}", 15)):
+                if to != frm and len(ex.places.get(to, [])) < cap:
+                    out.append((frm, to, side))
+        return out
+
+    def need(self, to, side):
+        """How much the dataset wants a checker of side as the next one on place to: few
+        photos of that spot with that colour (and where the detector made mistakes) = more."""
+        i = len(self.ex.places.get(to, []))
+        w = 1.0 / np.sqrt(1.0 + self.cov.get((to, i, side), 0))
+        if self.weak:
+            name = to if isinstance(to, int) else to.split("_")[0]
+            w *= 1.0 + self.weak.get(name, 0) / (1.0 + np.mean(list(self.weak.values())))
+        return w
+
+    def random_move(self):
+        """(from, to, side, goal xy, off-centre mm or 0). Where to: BAR_P to the bar,
+        TRAY_P to a bear-off tray, the rest to a column; RANDOM_P of the moves picked at
+        random, the others weighted by need() (Nadav 13.11: fill what the dataset lacks)."""
+        ex, L = self.ex, self.L
+        allm = self.moves()
+        if not allm:
+            raise RuntimeError("no possible random move")
+        r = self.rng.random()
+        kind = "bar" if r < BAR_P else "off" if r < BAR_P + TRAY_P else "point"
+        cands = [m for m in allm if (isinstance(m[1], int) if kind == "point" else str(m[1]).startswith(kind))]
+        cands = cands or allm
+        if self.rng.random() < RANDOM_P:
+            frm = self.rng.choice(sorted({m[0] for m in cands}, key=str))
+            frm, to, side = self.rng.choice([m for m in cands if m[0] == frm])
+        else:
+            w = [self.need(m[1], m[2]) for m in cands]
+            frm, to, side = self.rng.choices(cands, weights=w)[0]
+        goal = ex._free_slot(to)
+        off = 0.0
+        if self.rng.random() < OFF_CENTRE_P:
+            others = [p for p in ex.all_xy()]
+            for _ in range(20):
+                r = self.rng.uniform(*OFF_CENTRE_MM)
+                a = self.rng.uniform(0, 2 * np.pi)
+                q = (goal[0] + r * np.cos(a), goal[1] + r * np.sin(a))
+                if (4 <= q[0] <= L.xmax - 4 and 4 <= q[1] <= L.ymax - 4
+                        and all(np.hypot(q[0] - o[0], q[1] - o[1]) >= L.checker + 1 for o in others)):
+                    goal, off = q, r
+                    break
+        return frm, to, side, tuple(goal), off
 
     def step(self):
         """One random move + photo + check. False = stop."""
@@ -247,10 +402,18 @@ class Collector:
         self.log(f"   {what}   change check {cost}")
         note = ""
         if cost >= STOP_COST:
-            img = self.check(img, f"{what}: more changed than this move. Look at the circles", mark=goal)
-            if img is None:
-                return False
-            note = "checked by hand"
+            # a second opinion before stopping (Nadav 13.11): the trained detector reads the
+            # photo; if it sees exactly the expected position, the change check was a false alarm
+            seen = self.read(img)
+            if seen is not None and not seen["diff"]:
+                note = "change check stopped, detector agreed"
+                self.log(f"   change check {cost}, but the detector reads exactly this position: going on")
+            else:
+                img = self.check(img, f"{what}: more changed than this move. Look at the circles",
+                                 mark=goal, seen=seen)
+                if img is None:
+                    return False
+                note = "checked by hand"
         self.save(img, f"{self.n:03d}.jpg", note)
         self.prev, self.n = img, self.n + 1
         return not self.peek(self.drawing(img, mark=goal), [what, "q = stop after this move"])

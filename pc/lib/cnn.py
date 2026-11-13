@@ -155,7 +155,7 @@ class Detector:
 
     def board(self, x, e, L):
         import vision
-        return vision.summarize(self.find_x(x, e, L), L).board
+        return learned.full(vision.summarize(self.find_x(x, e, L), L))
 
     def save(self, path=PATH):
         import torch
