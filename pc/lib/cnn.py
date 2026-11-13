@@ -80,12 +80,20 @@ class Detector:
         self.net, self.mu, self.sd, self.cols = net, mu, sd, cols   # cols: which feature columns it uses
 
     @classmethod
-    def train(cls, samples, epochs=12, seed=0, log=None, pixels_only=False):
+    def train(cls, samples, epochs=30, seed=0, log=None, pixels_only=False, patience=3):
         """samples: [(images, extra, labels)] per photo (labels from learned.labels).
         pixels_only: a control without the computed features (only where the slot is and
-        whether there is an empty photo), to see what the features add."""
+        whether there is an empty photo), to see what the features add.
+        Early stopping: the last 15% of the photos are kept apart; after every epoch the
+        loss on them is checked, the best weights are kept, and training stops after
+        `patience` epochs without a better one (or after `epochs`)."""
+        import copy
+
         import torch
         torch.manual_seed(seed)
+        n = len(samples)
+        k = n - max(1, int(round(n * 0.15))) if n >= 6 else n
+        samples, check = samples[:k], samples[k:]
         nf = samples[0][1].shape[1]
         cols = [nf - 4, nf - 3, nf - 2, nf - 1] if pixels_only else list(range(nf))
         X = torch.from_numpy(np.concatenate([s[0] for s in samples]))
@@ -98,6 +106,11 @@ class Detector:
         cnt = torch.bincount(Y, minlength=3).float().clamp(min=1)
         lossf = torch.nn.CrossEntropyLoss(weight=(cnt.sum() / cnt) / 3)
         g = torch.Generator().manual_seed(seed)
+        if check:
+            Xc = torch.from_numpy(np.concatenate([s[0] for s in check]))
+            Ec = (torch.from_numpy(np.concatenate([s[1] for s in check])[:, cols]) - mu) / sd
+            Yc = torch.from_numpy(np.concatenate([s[2] for s in check])).long()
+        best, keep, bad = float("inf"), None, 0
         for ep in range(epochs):
             net.train()
             perm = torch.randperm(len(Y), generator=g)
@@ -118,10 +131,27 @@ class Detector:
                 loss.backward()
                 opt.step()
                 tot += float(loss.detach()) * len(i)
+            msg = f"      epoch {ep + 1}  loss {tot / len(Y):.3f}"
+            if check:
+                net.eval()
+                with torch.no_grad():
+                    lv = sum(float(lossf(net(Xc[j:j + 1024], Ec[j:j + 1024]), Yc[j:j + 1024])) * len(Yc[j:j + 1024])
+                             for j in range(0, len(Yc), 1024)) / len(Yc)
+                msg += f"  on photos it does not learn from {lv:.3f}"
+                if lv < best - 1e-4:
+                    best, keep, bad = lv, copy.deepcopy(net.state_dict()), 0
+                else:
+                    bad += 1
             if log:
-                log(f"      epoch {ep + 1}/{epochs}  loss {tot / len(Y):.3f}")
+                log(msg)
+            if check and bad >= patience:
+                break
+        if keep is not None:
+            net.load_state_dict(keep)
         net.eval()
-        return cls(net, mu, sd, cols)
+        d = cls(net, mu, sd, cols)
+        d.epochs = ep + 1
+        return d
 
     def probs(self, x, e):
         import torch
