@@ -10,9 +10,8 @@ A window shows the guess (green): the ellipse is where the round bottom of the c
 should appear at that spot (from calib.json if there is one, then from the points measured
 so far). Click so the ellipse sits on the bottom of the checker. Enter = accept, s = skip
 this point, r = take the photo again, q = stop. A broken photo (stripes) is retaken by itself.
-Before each photo the cart steps 40 mm out in y (away from the middle of the board), so
-the carriage and rail are never between the camera and the checker; on the edge rows it
-goes to the opposite edge.
+Before each photo the cart goes to the middle of the board, or, for a point near the
+middle, steps aside by 80 mm, so the carriage and rail do not hide the checker.
 After the first two rows the guess uses the points so far, so most of
 the time you only press Enter.
 Photos are saved in captures/calib/. At the end a map of the error per point is shown and
@@ -35,12 +34,9 @@ import calib_map
 import paths
 import ui
 from board import Board, BoardError
-from helpers import ask, find_circles, magnet_on, photo
+from helpers import ask, find_circles, magnet_on, photo, step_aside
 
 OUT = Path(__file__).parent / "captures" / "calib"
-
-
-AWAY_Y = 40.0   # mm the cart steps out in y for each photo (Nadav 13.11: not to the end every time)
 
 
 def grid(n, xmax, ymax, margin):
@@ -115,21 +111,20 @@ def saved_maps():
 
 
 
-def aside(x, y, args):
-    """Where the cart waits for the photo of a checker at (x, y), magnet off: 40 mm further
-    out in y (away from the middle of the board, where the camera looks up from the
-    mirror), so the cart and its rail are never between the camera and the checker.
-    Near y = 0 there is no room outward: 40 mm inward (Nadav 13.11). Near y max: the
-    opposite edge."""
-    mid = args.ymax / 2
-    ty = y + AWAY_Y if y >= mid else y - AWAY_Y
-    if 0 <= ty <= args.ymax:
-        return x, ty
-    return (x, y + AWAY_Y) if y < mid else (x, 0.0)
+def aside(x, y, args, park):
+    """Where the cart waits for the photo of a checker at (x, y): the middle of the board
+    (lane centre on the bar row) when the checker is far from it, else a step aside
+    (--away mm in each axis). As before 12.11 (Nadav 13.11: back to this)."""
+    if np.hypot(x - park[0], y - park[1]) > 2 * args.away:
+        return park
+    return step_aside(x, y, args)
 
 
 def run(args):
     OUT.mkdir(parents=True, exist_ok=True)
+    from layout import Layout
+    L = Layout.load()
+    park = L.to_magnet(L.xmax / 2, L._row_y(6))   # middle of the board
     pts = grid(args.n, args.xmax, args.ymax, args.margin)
     px, mm = [], []
     old = saved_maps()
@@ -143,7 +138,7 @@ def run(args):
             time.sleep(paths.SETTLE_S)  # magnet still on: the checker centres over the point
             b.magnet(False)
             while True:   # r in the window = take this photo again
-                b.move(*aside(x, y, args))  # so the carriage does not hide the checker
+                b.move(*aside(x, y, args, park))  # so the carriage does not hide the checker
                 time.sleep(0.3)
                 img, jpeg = photo(b)
                 b.move(x, y)  # back under the checker (magnet off), the next loop turns it on
@@ -238,7 +233,7 @@ if __name__ == "__main__":
     ap.add_argument("--margin", type=float, default=0, help="mm from each edge (0 = the grid reaches the limits)")
     ap.add_argument("--away", type=float, default=80,
                     help="mm the magnet steps aside in each axis before a photo")
-    ap.add_argument("--park", type=lambda t: tuple(map(float, t.split(","))), default=(205, 420),
+    ap.add_argument("--park", type=lambda t: tuple(map(float, t.split(","))), default=(410, 420),
                     help="test mode: where the magnet waits during the photo, x,y in mm")
     ap.add_argument("--auto", action="store_true", help="accept guesses that match the prediction")
     ui.keep_open()
