@@ -4,7 +4,8 @@
     py console.py COM5
 
 Type board commands as usual: H, G 100 200, R 10 0, M 1, M 0, C, ?
-  C saves the photo in captures/ and shows it; after calibration also the photo
+  straightened to a top view (1 px = 1 mm, saved as *_top.jpg).
+  CH = one photo at full sensor size 2048x1536 (needs the board firmware from 13.11).
   straightened to a top view (1 px = 1 mm, saved as *_top.jpg).
   q = quit.
 Two modes:
@@ -27,7 +28,7 @@ from board import Board, BoardError
 
 DEV_TOGGLE = "dev"  # the word that switches normal <-> developer mode
 
-TIMEOUTS = {"H": 60, "G": 30, "R": 30, "C": 10}
+TIMEOUTS = {"H": 60, "G": 30, "R": 30, "C": 15}
 out = Path(__file__).parent / "captures"
 dev = False
 
@@ -40,7 +41,12 @@ def log(line):
 def show_photo(path, img):
     """The corrected top view when there is a calibration (saved as *_top.jpg too), else raw."""
     import calib
-    shown, note = calib.corrected(img)
+    small = img
+    if img.shape[1] > 1600 and abs(img.shape[1] * 3 - img.shape[0] * 4) < 8:   # CH photo: view it at the calibrated size
+        small = cv2.resize(img, (1600, 1200), interpolation=cv2.INTER_AREA)
+    shown, note = calib.corrected(small)
+    if shown is small:
+        shown = img
     if note:
         print("  (raw photo:", note + ")")
     if shown is not img:

@@ -12,6 +12,7 @@
  *   M 1 / M 0      electromagnet on / off; M 1 answers DONE after 300 ms (the checker centres
  *                  over the magnet), M 0 after 500 ms (it is let go)  ERR MAG_HOT
  *   C              capture: "IMG <n>" line, then exactly n JPEG bytes, then DONE   ERR CAM
+ *   CH             the same once at full sensor size QXGA 2048x1536 (~1 s), then back to UXGA
  *                  (allowed with the magnet on, but warns "! CAPTURE_WITH_MAG_ON")
  *   P <v> <a>      drag profile (magnet on): top speed mm/s, accel mm/s^2, default 180 / 800
  *   F <v> <a>      free profile (magnet off), default 150 / 1200; starts at 40 mm/s so the
@@ -279,7 +280,8 @@ bool initCamera() {
   c.pin_reset = -1;
   c.xclk_freq_hz = 20000000;
   c.pixel_format = PIXFORMAT_JPEG;
-  c.frame_size   = FRAMESIZE_UXGA; // 1600x1200, כל שדה הראייה (4:3); calib.json צריך כיול מחדש אחרי שינוי
+  c.frame_size   = FRAMESIZE_QXGA; // buffers big enough for CH; set to UXGA right after init
+  // UXGA 1600x1200, כל שדה הראייה (4:3); calib.json צריך כיול מחדש אחרי שינוי
   c.jpeg_quality = 12;
   c.fb_count     = 2;
   c.fb_location  = CAMERA_FB_IN_PSRAM;
@@ -290,7 +292,21 @@ bool initCamera() {
     delay(200);
     if (esp_camera_init(&c) != ESP_OK) return false;
   }
+  sensor_t* s = esp_camera_sensor_get();
+  if (s) s->set_framesize(s, FRAMESIZE_UXGA);
   return true;
+}
+
+// CH: one photo at QXGA, then back to UXGA. A few frames are dropped after each change.
+const char* captureHigh() {
+  if (!camReady) return "CAM";
+  sensor_t* s = esp_camera_sensor_get();
+  if (!s || s->set_framesize(s, FRAMESIZE_QXGA) != 0) return "CAM";
+  for (int i = 0; i < 2; i++) { camera_fb_t* f = esp_camera_fb_get(); if (f) esp_camera_fb_return(f); }
+  const char* err = captureToSerial();
+  s->set_framesize(s, FRAMESIZE_UXGA);
+  for (int i = 0; i < 2; i++) { camera_fb_t* f = esp_camera_fb_get(); if (f) esp_camera_fb_return(f); }
+  return err;
 }
 
 // שולח "IMG <n>" ואחריו n בתים. מחזיר nullptr בהצלחה.
@@ -386,7 +402,7 @@ void execute(String cmd) {
       }
       break;
     case 'C':
-      reply(captureToSerial());
+      reply(cmd.length() > 1 && toupper(cmd[1]) == 'H' ? captureHigh() : captureToSerial());
       break;
     case 'P':
     case 'F':
