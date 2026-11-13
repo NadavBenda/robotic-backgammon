@@ -318,14 +318,24 @@ def find_norm(img, c, L, model, depth=7):
     found, hidden = [], []
     places = list(range(1, 25)) + ["bar_robot", "bar_human", "off_robot", "off_human"]
     for w in places:
-        k = 15 if str(w).startswith("off") else depth
+        k = 15 if str(w).startswith("off") else 4 if str(w).startswith("bar") else depth
         xy = [L.slot(w, i) for i in range(k)]
         f = norm_features(g, c, xy)
+        here = []
         for (x, y), (disc, rim, vis) in zip(xy, f):
             if vis <= n["hidden"]:
                 hidden.append(w)
             elif (disc < n["presence"]) == n.get("dark", True):
-                found.append((float(x), float(y), n["light"] if rim > n["colour"] else dark))
+                here.append((float(x), float(y), rim))
+        if not here:
+            continue
+        if isinstance(w, int):
+            # a point holds one colour only: decide by the median rim of all its checkers
+            # (the outermost checker sees more glass in its rim and looks lighter)
+            side = n["light"] if float(np.median([h[2] for h in here])) > n["colour"] else dark
+        else:
+            side = w.split("_")[1]   # bar_robot / off_human ...: the place says whose
+        found += [(x, y, side) for x, y, _ in here]
     return found, sorted(set(map(str, hidden)))
 
 
