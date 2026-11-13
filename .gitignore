@@ -222,3 +222,6 @@ pc/games/
 
 # internal PC code folder (overrides lib/ above)
 !pc/lib/
+
+# labelled photos from collect.py (stay on the PC)
+pc/dataset/

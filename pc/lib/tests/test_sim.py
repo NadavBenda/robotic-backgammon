@@ -92,6 +92,39 @@ def test_full_game_in_simulator():
     assert bad == 0 and bumps == 0, (bad, bumps, warnings)
 
 
+def test_collect_random_moves():
+    """collect.py: random moves keep their labels, a knocked checker is noticed."""
+    import json
+    import tempfile
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    import collect
+    L = Layout.load()
+    b = SimBoard.with_board(rules.OPENING, L)
+    d = tempfile.mkdtemp()
+    collect.STATE = Path(d) / "state.json"
+    col = collect.Collector(b, b.calib, L, d, auto=True, seed=3, log=lambda *a: None)
+    costs = []
+    real = collect.vision.change_cost
+    collect.vision.change_cost = lambda *a: costs.append(real(*a)) or costs[-1]
+    try:
+        assert col.start()
+        for _ in range(30):
+            col.step()
+        assert b.bumps == 0 and max(costs) < collect.STOP_COST, (b.bumps, costs)
+        last = json.loads(Path(d, "labels.jsonl").read_text().splitlines()[-1])
+        truth = b.checkers()
+        assert all(min(np.hypot(x - t[0], y - t[1]) for t in truth if t[2] == s) < 4
+                   for x, y, s, _ in last["checkers"])
+        b.ck[5][1] += 29          # a checker knocked out of its place
+        col.step()
+        assert costs[-1] >= collect.STOP_COST, costs[-1]
+        col.back_to_opening()
+        assert col.board() == rules.OPENING
+    finally:
+        collect.vision.change_cost = real
+
+
 if __name__ == "__main__":
     for k, f in list(globals().items()):
         if k.startswith("test_"):
