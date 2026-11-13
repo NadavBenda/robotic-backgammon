@@ -253,6 +253,50 @@ class _Shifted:
         return np.asarray(u, float) + self.du, np.asarray(v, float) + self.dv
 
 
+class _Warped:
+    """Board mm moved by a 2x3 affine before the calibration: where the checkers really show
+    up in the photo (the body of a tall checker seen at an angle, a camera that moved)."""
+    def __init__(self, c, A):
+        self.c, self.A = c, np.asarray(A, float)
+
+    def mm_to_px(self, x, y):
+        x, y = np.asarray(x, float), np.asarray(y, float)
+        A = self.A
+        return self.c.mm_to_px(A[0, 0] * x + A[0, 1] * y + A[0, 2], A[1, 0] * x + A[1, 1] * y + A[1, 2])
+
+
+def _view(c, n):
+    """The calibration as the norm model sees it: warp in mm, then shift in pixels."""
+    if n.get("warp") is not None:
+        c = _Warped(c, n["warp"])
+    if n.get("shift"):
+        c = _Shifted(c, *n["shift"])
+    return c
+
+
+def find_warp(g, c, L, board, reach=12.0, step=2.0):
+    """2x3 affine (mm -> mm) that moves each checker of a known board onto the darkest spot
+    within `reach` mm of its slot (darkness = disc / glass). None if it does not help."""
+    placed = [xy for xy, _ in L.place(board).values()]
+    offs = np.arange(-reach, reach + 0.1, step)
+    grid = np.array([(dx, dy) for dx in offs for dy in offs if np.hypot(dx, dy) <= reach])
+    src, dst = [], []
+    for x, y in placed:
+        q = np.array([x, y]) + grid
+        f = norm_features(g, c, q)
+        ok = f[:, 2] > NORM_DEFAULT["hidden"]
+        if not ok.any():
+            continue
+        d = np.where(ok, f[:, 0], 9.0)
+        src.append((x, y))
+        dst.append(tuple(q[int(d.argmin())]))
+    if len(src) < 8:
+        return None
+    src, dst = np.float32(src), np.float32(dst)
+    A, inl = cv2.estimateAffine2D(src, dst, ransacReprojThreshold=6.0)
+    return None if A is None else A.tolist()
+
+
 def find_shift(g, c, L, board, reach=40):
     """(du, dv) pixels that make the checkers of a known board stand out most from the glass
     under their slots (darker on the real board, lighter in the simulator)."""
@@ -271,9 +315,13 @@ def learn_norm(img, c, L, board):
     (on the real board the best-contrast shift was sometimes worse than none)."""
     g = _gray(img)
     du, dv = find_shift(g, c, L, board)
+    warp = find_warp(g, c, L, board)
+    tries = [(None, sh) for sh in dict.fromkeys([(0, 0), (round(du / 2), round(dv / 2)), (du, dv)])]
+    if warp is not None:
+        tries.append((warp, (0, 0)))   # the warp already contains any shift
     best = None
-    for sh in dict.fromkeys([(0, 0), (round(du / 2), round(dv / 2)), (du, dv)]):
-        n = _learn_norm_at(g, c, L, board, *sh)
+    for w, sh in tries:
+        n = _learn_norm_at(g, c, L, board, *sh, warp=w)
         ck, _ = find_norm(img, c, L, type("M", (), {"norm": n})())
         wrong = sum(abs(a - b) for a, b in zip(summarize(ck, L).board, board))
         if best is None or wrong < best[0]:
@@ -281,8 +329,8 @@ def learn_norm(img, c, L, board):
     return best[1]
 
 
-def _learn_norm_at(g, c, L, board, du, dv):
-    c = _Shifted(c, du, dv)
+def _learn_norm_at(g, c, L, board, du, dv, warp=None):
+    c = _view(c, {"shift": [du, dv], "warp": warp})
     placed = L.place(board)
     taken = [xy for xy, _ in placed.values()]
     occ = {"robot": [], "human": []}
@@ -304,6 +352,7 @@ def _learn_norm_at(g, c, L, board, du, dv):
         n["colour"] = (mr + mh) / 2
         n["light"] = "human" if mh > mr else "robot"
     n["shift"] = [du, dv]
+    n["warp"] = warp
     return n
 
 
@@ -312,8 +361,7 @@ def find_norm(img, c, L, model, depth=7):
     Slots whose glass is much darker than the picture's glass are hidden (not read)."""
     n = model.norm if model is not None and model.norm else NORM_DEFAULT
     g = _gray(img)
-    if n.get("shift"):
-        c = _Shifted(c, *n["shift"])
+    c = _view(c, n)
     dark = "robot" if n["light"] == "human" else "human"
     found, hidden = [], []
     places = list(range(1, 25)) + ["bar_robot", "bar_human", "off_robot", "off_human"]
