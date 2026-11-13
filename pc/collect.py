@@ -23,10 +23,14 @@ Steps (the photo window tells you what to press at each one):
      After each move it compares the photo with the one before: if more changed than
      the move explains (a checker dropped, pushed or left behind), the trained detector
      (detector.json, if there is one) reads the photo too. If it reads exactly the
-     expected position, the robot goes on (a false alarm). Otherwise it stops and shows
-     step 4 again, with the camera's reading as dots and red rings where it differs:
+     expected position, the robot goes on (a false alarm). If it sees a checker where
+     none should be and one missing elsewhere (a pushed checker), the robot drags it
+     back to its circle once and looks again; when that fixed it, it goes on.
+     Otherwise it stops and shows step 4 again, with the camera's reading as dots and
+     red rings where it differs:
      d = the dots are right (the robot goes on from what the camera sees; you confirm
-     the new circles with Enter). q in the photo window = stop after this move.
+     the new circles with Enter), r = the robot puts back along the yellow arrows (when
+     it has an offer). q in the photo window = stop after this move.
   6. At the end: Enter = the robot puts everything back into the opening (for the next
      run), n = leave it as it is.
 
@@ -65,6 +69,8 @@ RANDOM_P = 0.3         # share of moves picked at random; the rest go where the 
 STOP_COST = 2          # places that changed more / less than the move explains -> stop
 COLOURS = {"robot": (80, 220, 80), "human": (0, 165, 255)}
 DIFF = (60, 60, 255)   # red: where the camera reads something else
+FIX_MATCH = 14.0       # mm: a checker seen this near an expected one is that checker
+FIX_MAX = 3            # the robot puts back at most this many checkers by itself
 
 
 def add_counts(cnt, checkers):
@@ -184,7 +190,7 @@ class Collector:
         with open(self.folder / "labels.jsonl", "a", encoding="utf-8") as f:
             f.write(json.dumps(rec) + "\n")
 
-    def drawing(self, img, mark=None, arrow=None, seen=None):
+    def drawing(self, img, mark=None, arrow=None, seen=None, fixes=()):
         """Top view with a circle where every checker should be (the moved one thicker,
         a small cross at each centre), arrow = [xy, ...]: the drag about to be made (its
         planned path), seen = the camera's reading (dots; red ring where it differs)."""
@@ -206,6 +212,9 @@ class Collector:
                 if where_of(self.L, x, y) in bad:
                     u, v = (int(t) for t in f.mm_to_px(x, y))
                     cv2.circle(top, (u, v), r + 6, DIFF, 2, cv2.LINE_AA)
+        for a, z in fixes:     # the robot's offer: drag this checker back to its circle
+            cv2.arrowedLine(top, tuple(int(t) for t in f.mm_to_px(*a)), tuple(int(t) for t in f.mm_to_px(*z)),
+                            (0, 230, 255), 3, cv2.LINE_AA, tipLength=0.25)
         if arrow is not None:
             P = [tuple(int(t) for t in f.mm_to_px(*q)) for q in arrow]
             cv2.circle(top, P[0], r + 4, (0, 230, 255), 3, cv2.LINE_AA)
@@ -241,13 +250,17 @@ class Collector:
             lines = [why]
             if seen is not None and seen["diff"]:
                 lines.append("Camera (dots) differs at: " + ", ".join(seen["text"][:4]))
+            fixes = self.plan_fix(img, seen) if seen is not None and seen["diff"] else []
             lines.append("Every checker inside its circle?  Enter=yes   f=I moved them, look again"
-                         + ("   d=the dots are right" if seen is not None and seen["diff"] else "") + "   q=stop")
-            k = self.key(self.drawing(img, mark, seen=seen), lines, "\rfdq", "\r")
+                         + ("   d=the dots are right" if seen is not None and seen["diff"] else "")
+                         + ("   r=robot puts back (yellow arrows)" if fixes else "") + "   q=stop")
+            k = self.key(self.drawing(img, mark, seen=seen, fixes=fixes), lines, "\rfdrq", "\r")
             if k == "\r":
                 return img
             if k == "q":
                 return None
+            if k == "r" and fixes:
+                self.fix(fixes)
             if k == "d" and seen is not None and seen["diff"]:
                 self.take(seen["checkers"])
                 why, seen, mark = "The camera's reading is now the position: are the circles right?", None, None
@@ -256,10 +269,8 @@ class Collector:
             seen = self.read(img) if seen is not None else None
 
     # -- the trained detector ------------------------------------------------
-    def read(self, img):
-        """The trained detector's reading of a photo, against where the checkers should be:
-        {checkers: [(x, y, side)], diff: [place keys], text: [what differs]}, or None when
-        there is no detector.json yet (run train_detector.py)."""
+    def detect(self, img):
+        """[(x, y, side)] the trained detector's checkers, or None without detector.json."""
         if self._det is None:
             try:
                 import learned
@@ -270,7 +281,15 @@ class Collector:
             return None
         e = self.folder / "empty_0.jpg"
         empty = cv2.imdecode(np.fromfile(str(e), np.uint8), cv2.IMREAD_COLOR) if e.exists() else None
-        ck, _ = self._det[0].find(img, self.c, self.L, empty)
+        return self._det[0].find(img, self.c, self.L, empty)[0]
+
+    def read(self, img):
+        """The trained detector's reading of a photo, against where the checkers should be:
+        {checkers: [(x, y, side)], diff: [place keys], text: [what differs]}, or None when
+        there is no detector.json yet (run train_detector.py)."""
+        ck = self.detect(img)
+        if ck is None:
+            return None
         r = vision.summarize(ck, self.L)
         got, want = list(r.board) + list(r.off), full_board(self.board(), self.checkers())
         diff, text = [], []
@@ -282,6 +301,66 @@ class Collector:
             tag = (lambda n: f"{abs(n)}{'R' if n > 0 else 'H' if n < 0 else ''}") if i < 26 else str
             text.append(f"{place_name(i)} {tag(b)}->{tag(a)}")
         return {"checkers": ck, "diff": diff, "text": text}
+
+    # -- the robot puts a pushed checker back (Nadav 13.11) -------------------
+    def plan_fix(self, img, seen):
+        """[(from xy, to xy)] drags that put the checkers back where they should be: every
+        expected checker the camera does not see, paired with the nearest checker it sees
+        where none should be. A stray is a place the detector calls a checker, or (between
+        the columns, where the detector does not look) a round shape that was not in the
+        photo before; its position is the round shape's centre when there is one."""
+        import learned
+        E = [(x, y) for x, y, _, _ in self.checkers()]
+        S = [(x, y) for x, y, _ in seen["checkers"]]
+        dist = lambda a, b: float(np.hypot(a[0] - b[0], a[1] - b[1]))  # noqa: E731
+        pairs = sorted((dist(e, q), i, j) for i, e in enumerate(E) for j, q in enumerate(S) if dist(e, q) <= FIX_MATCH)
+        used_e, used_s = set(), set()
+        for _, i, j in pairs:
+            if i not in used_e and j not in used_s:
+                used_e.add(i)
+                used_s.add(j)
+        H = [tuple(h) for h in learned.hough_centres(img, self.c, self.L)]
+        H0 = [tuple(h) for h in learned.hough_centres(self.prev, self.c, self.L)] if self.prev is not None else []
+        missing = [e for i, e in enumerate(E) if i not in used_e and not any(dist(e, h) < 8 for h in H)]
+        extra = []
+        for j, q in enumerate(S):
+            if j in used_s:
+                continue
+            near = [h for h in H if dist(q, h) <= 13]
+            extra.append(min(near, key=lambda h: dist(q, h)) if near else q)
+        # between the columns the detector does not look: a new round shape far from every checker
+        loose = [h for h in H if all(dist(h, e) > 20 for e in E) and all(dist(h, x) > 20 for x in extra)
+                 and all(dist(h, o) > 8 for o in H0)]
+        # the photo before was right, so a real difference is at a spot that changed since
+        # then; anything else is the detector's own mistake and is left alone
+        if self.prev is None:
+            return []
+        keep = lambda pts: [q for q, yes in zip(pts, vision.changed_at(self.prev, img, self.c, self.L, pts)) if yes]  # noqa: E731
+        missing, extra, loose = keep(missing), keep(extra), keep(loose)
+        out = []
+        for pool in (extra, loose):
+            while missing and pool and len(out) < FIX_MAX:
+                _, m, x = min((dist(m, x), m, x) for m in missing for x in pool)
+                missing.remove(m)
+                pool.remove(x)
+                out.append((x, m))
+        return out if not missing and not extra else []     # only when it explains everything
+
+    def fix(self, fixes):
+        """Drag each stray checker to its place. The position the robot believes in does
+        not change: this only makes the glass match it again."""
+        import paths
+        ex = self.ex
+        targets = [t for _, t in fixes]
+        done = []
+        for k, (src, goal) in enumerate(fixes):
+            others = [p for p in ex.all_xy() if p not in targets] + done + [s for s, _ in fixes[k + 1:]]
+            path, _ = ex.plan(tuple(src), tuple(goal), others)
+            ex.goto(tuple(src), others)
+            paths.drag(ex.b, path, overshoot=ex._overshoot(path, others), grab_s=ex.grab_s,
+                       xmax=self.L.xmax, ymax=self.L.ymax, settle_s=ex.settle_s)
+            ex.cart = tuple(goal)
+            done.append(tuple(goal))
 
     def take(self, ck):
         """Make the camera's reading [(x, y, side)] the position the robot works from."""
@@ -405,10 +484,24 @@ class Collector:
             # a second opinion before stopping (Nadav 13.11): the trained detector reads the
             # photo; if it sees exactly the expected position, the change check was a false alarm
             seen = self.read(img)
-            if seen is not None and not seen["diff"]:
+            ok = seen is not None and not seen["diff"]
+            if ok:
                 note = "change check stopped, detector agreed"
                 self.log(f"   change check {cost}, but the detector reads exactly this position: going on")
-            else:
+            elif seen is not None:
+                fixes = self.plan_fix(img, seen)
+                if fixes:      # a checker was pushed: the robot puts it back once, then looks again
+                    self.log(f"   change check {cost}: putting {len(fixes)} checker(s) back")
+                    self.fix(fixes)
+                    img = self.photo()
+                    changed, _ = vision.slot_changes(self.prev, img, self.c, self.L)
+                    cost = vision.change_cost(changed, self.L, b0, b1)
+                    seen = self.read(img)
+                    ok = cost < STOP_COST
+                    if ok:
+                        note = "put back by the robot"
+                        self.log(f"   now the change check is {cost}: going on")
+            if not ok:
                 img = self.check(img, f"{what}: more changed than this move. Look at the circles",
                                  mark=goal, seen=seen)
                 if img is None:
