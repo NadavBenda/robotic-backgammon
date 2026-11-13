@@ -499,16 +499,32 @@ def slot_changes(before, after, c, L):
         for i, q in enumerate(pts):
             keys.append((w, i))
             xy.append(q)
-    xy = np.array(xy, float)
+    d = _change(gb, ga, c, xy)
+    t = max(DELTA_MIN, 3 * float(np.median(d)))
+    return dict(zip(keys, d > t)), dict(zip(keys, d))
+
+
+def _change(gb, ga, c, xy):
+    """How much each spot xy (mm) differs between two grey photos, relative to its glass."""
+    xy = np.array(xy, float).reshape(-1, 2)
     P = xy[:, None, :] + _DELTA_OFFS[None]
     u, v = c.mm_to_px(P[..., 0], P[..., 1])
     u = np.clip(np.rint(np.asarray(u, float)), 0, gb.shape[1] - 1).astype(int)
     v = np.clip(np.rint(np.asarray(v, float)), 0, gb.shape[0] - 1).astype(int)
     a, b = ga[v, u], gb[v, u]
     glass = np.maximum(np.percentile(np.maximum(a, b), 90, axis=1), 1.0)
-    d = np.abs(a - b).mean(1) / glass
-    t = max(DELTA_MIN, 3 * float(np.median(d)))
-    return dict(zip(keys, d > t)), dict(zip(keys, d))
+    return np.abs(a - b).mean(1) / glass
+
+
+def changed_at(before, after, c, L, xy):
+    """[True/False] did each spot xy (mm, anywhere on the glass) change between two photos
+    (the same measure and threshold as slot_changes)."""
+    if not len(xy):
+        return []
+    gb, ga = _gray(before).astype(float), _gray(after).astype(float)
+    ref = _change(gb, ga, c, [q for pts in _places(L).values() for q in pts])
+    t = max(DELTA_MIN, 3 * float(np.median(ref)))
+    return list(_change(gb, ga, c, xy) > t)
 
 
 def _expected(L, b0, b1):

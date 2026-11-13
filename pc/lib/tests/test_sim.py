@@ -125,6 +125,41 @@ def test_collect_random_moves():
         collect.vision.change_cost = real
 
 
+def test_collect_puts_a_pushed_checker_back():
+    """collect.py: a checker knocked into the lane is found (the detector's reading + a new
+    round shape where something changed) and dragged back to its place by the robot."""
+    import json
+    import tempfile
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    import collect
+    import learned
+    L = Layout.load()
+    S = [q for _, _, q in learned.slots(L)]
+    b = SimBoard.with_board(rules.OPENING, L, noise_mm=0.8, seed=1)
+    d = tempfile.mkdtemp()
+    collect.STATE = Path(d) / "state.json"
+    col = collect.Collector(b, b.calib, L, d, auto=True, seed=1, log=lambda *a: None)
+
+    def detect(img):      # stands in for the trained detector: the truth, snapped to the slots
+        out = []
+        for x, y, s in b.checkers():
+            k = min(range(len(S)), key=lambda i: np.hypot(S[i][0] - x, S[i][1] - y))
+            if np.hypot(S[k][0] - x, S[k][1] - y) <= 14:
+                out.append((S[k][0], S[k][1], s))
+        return out
+    col.detect = detect
+    assert col.start()
+    for _ in range(8):
+        col.step()
+    b.ck[3][0] = L.xmax / 2 + 10      # knocked into the middle lane
+    col.step()
+    last = json.loads(Path(d, "labels.jsonl").read_text().splitlines()[-1])
+    truth = b.checkers()
+    worst = max(min(np.hypot(x - t[0], y - t[1]) for t in truth) for x, y, _, _ in last["checkers"])
+    assert last["note"] == "put back by the robot" and worst < 4 and b.bumps == 0, (last["note"], worst, b.bumps)
+
+
 if __name__ == "__main__":
     for k, f in list(globals().items()):
         if k.startswith("test_"):
