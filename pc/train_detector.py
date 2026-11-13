@@ -111,7 +111,7 @@ def evaluate(runs, c, L, log=print):
         ph = runs[0]["photos"]
         cut = max(1, int(len(ph) * 0.7))
         tests.append((runs[0]["name"] + " (last 30%)", ph[:cut], ph[cut:] or ph[-1:]))
-    tot_l, tot_n, tot_c = [], [], []
+    tot_l, tot_n, tot_c, tot_p = [], [], [], []
     for name, train, test in tests:
         det = learned.Detector.train(samples(train), L)
         el = [wrong(det.board(p["F0"], L), p["board"]) for p in test]
@@ -126,9 +126,15 @@ def evaluate(runs, c, L, log=print):
             ec = [wrong(cd.board(x, e, L), p["board"])
                   for (x, e, _), p in zip(cnn_samples(test, L, with_empty=False), test)]
             tot_c += ec
-            line += f"   pixel-net {np.mean(ec):.1f} ({sum(e == 0 for e in ec)} perfect)"
+            line += f"   pixel+features-net {np.mean(ec):.1f} ({sum(e == 0 for e in ec)} perfect)"
+            pd = cnn.Detector.train(cnn_samples(train, L), pixels_only=True)
+            ep = [wrong(pd.board(x, e, L), p["board"])
+                  for (x, e, _), p in zip(cnn_samples(test, L, with_empty=False), test)]
+            tot_p += ep
+            line += f"   pixels-only {np.mean(ep):.1f}"
         log(line)
-    return float(np.mean(tot_l)), float(np.mean(tot_n)), (float(np.mean(tot_c)) if tot_c else None)
+    return (float(np.mean(tot_l)), float(np.mean(tot_n)), (float(np.mean(tot_c)) if tot_c else None),
+            (float(np.mean(tot_p)) if tot_p else None))
 
 
 def main():
@@ -146,7 +152,7 @@ def report(c, L, save=True):
         return
     n = sum(len(r["photos"]) for r in runs)
     print(f"{n} photos in {len(runs)} run(s). Checking on photos it did not learn from:")
-    ml, mn, mc = evaluate(runs, c, L)
+    ml, mn, mc, mp = evaluate(runs, c, L)
     allp = [p for r in runs for p in r["photos"]]
     det = learned.Detector.train(samples(allp), L)
     if save:
@@ -155,7 +161,8 @@ def report(c, L, save=True):
     print(f"   norm (now in use)   {mn:.1f}")
     print(f"   features-net        {ml:.1f}   -> vision = learned")
     if mc is not None:
-        print(f"   pixel-net           {mc:.1f}   -> vision = cnn")
+        print(f"   pixel+features-net  {mc:.1f}   -> vision = cnn")
+        print(f"   pixels-only         {mp:.1f}   (a control: what the computed features add)")
         print("Training the pixel network on everything...")
         cd = cnn.Detector.train(cnn_samples(allp, L))
         if save:
