@@ -27,6 +27,8 @@ CLEAR = 30.0      # min centre distance to other checkers while dragging
 SOFT = 50.0       # prefer staying at least this far (24 mm air), worth a detour
 NEAR_W = 3.0      # how much a mm next to a checker costs over a mm in the open (x (1 + NEAR_W))
 GRID = 5.0        # mm
+SEG_MM = 40.0     # what one more line in a path costs, as mm of travel (Nadav 13.11): the cart stops at
+                  # every corner, and a stop + restart take about v*v/a = 180*180/800 mm worth of time
 XMAX, YMAX = 410.0, 420.0
 OVERSHOOT = 5.0   # mm past the target along the last line (the checker lags), then back
 SETTLE_S = 0.4    # s on the target with the magnet still on, so the checker centres over it
@@ -77,8 +79,59 @@ def clearance(path, others):
     return float(min(np.min(_seg_dist(o, a, b)) for a, b in zip(path, path[1:])))
 
 
-def plan(start, goal, others=(), xmax=XMAX, ymax=YMAX, clear=CLEAR, soft_mm=SOFT):
+def _fewest_lines(chain, others, need, clear, soft_mm, seg_mm):
+    """The corners to keep out of an A* chain: the cheapest way through its points, where a
+    line costs its length (more next to checkers, as in the A*) + seg_mm for being one more
+    line, and a corner sharp enough to be cut (round_corners adds a short line there) costs
+    seg_mm more. A line may skip points only when it keeps the hard distance to every checker."""
+    P = np.asarray(chain, float)
+    n = len(P)
+    if n <= 2:
+        return list(chain)
+    K = 24
+    t = (np.arange(K) + 0.5) / K
+    C = np.full((n, n), np.inf)          # C[i, j]: the line i -> j
+    for i in range(n - 1):
+        ab = P[i + 1:] - P[i]
+        L = np.hypot(ab[:, 0], ab[:, 1])
+        cost = L.copy()
+        ok = np.ones(len(ab), bool)
+        if len(others):
+            S = P[i] + t[None, :, None] * ab[:, None, :]                          # (m, K, 2) points on each line
+            d = np.hypot(S[:, :, None, 0] - others[:, 0], S[:, :, None, 1] - others[:, 1])   # (m, K, M)
+            if soft_mm > clear:
+                cost = L * (1 + NEAR_W * (np.clip((soft_mm - d) / (soft_mm - clear), 0, 1) ** 2).sum(-1).mean(-1))
+            # exact distance checker - line, for the hard limit
+            tt = np.clip(((others - P[i]) @ ab.T).T / np.maximum(L * L, 1e-9)[:, None], 0, 1)   # (m, M)
+            Q = P[i] + tt[:, :, None] * ab[:, None, :]
+            ok = np.all(np.hypot(Q[..., 0] - others[:, 0], Q[..., 1] - others[:, 1]) >= need, axis=1)
+            ok[0] = True      # the next point of the chain: the A* already took this step
+        C[i, i + 1:] = np.where(ok, cost + seg_mm, np.inf)
+    best = np.full((n, n), np.inf)       # best[i, j]: the cheapest path from the start that ends with line i -> j
+    back = np.zeros((n, n), int)
+    best[0] = C[0]
+    cos_min = np.cos(np.radians(ROUND_MIN_DEG))
+    for j in range(1, n - 1):
+        din = P[j] - P[:j]
+        dout = P[j + 1:] - P[j]
+        din = din / np.maximum(np.hypot(din[:, 0], din[:, 1]), 1e-9)[:, None]
+        dout = dout / np.maximum(np.hypot(dout[:, 0], dout[:, 1]), 1e-9)[:, None]
+        cand = best[:j, j][:, None] + seg_mm * ((din @ dout.T) < cos_min)       # (incoming, outgoing)
+        k = np.argmin(cand, axis=0)
+        best[j, j + 1:] = cand[k, np.arange(cand.shape[1])] + C[j, j + 1:]
+        back[j, j + 1:] = k
+    j = n - 1
+    i = int(np.argmin(best[:, j]))
+    out = [j, i]
+    while i:
+        i, j = int(back[i, j]), i
+        out.append(i)
+    return [chain[k] for k in out[::-1]]
+
+
+def plan(start, goal, others=(), xmax=XMAX, ymax=YMAX, clear=CLEAR, soft_mm=SOFT, seg_mm=SEG_MM):
     """Corners of a path from start to goal (mm), first = start, last = goal.
+    seg_mm: what one more line costs (as mm), so a slightly longer path with fewer stops wins.
     Raises NoPath when the checkers block every way (move one of them first)."""
     start, goal = np.asarray(start, float), np.asarray(goal, float)
     others = np.asarray(others, float).reshape(-1, 2)
@@ -152,17 +205,9 @@ def plan(start, goal, others=(), xmax=XMAX, ymax=YMAX, clear=CLEAR, soft_mm=SOFT
         n = prev[n]
     chain.append(start)
     chain = chain[::-1]
-    # cut corners: from each corner jump to the farthest point still reachable in a line
-    # that keeps at least the room the A* path kept there
-    short = [_short(a, b, others, soft) for a, b in zip(chain, chain[1:])]
-    out, i = [chain[0]], 0
-    while i < len(chain) - 1:
-        j = len(chain) - 1
-        while j > i + 1 and not (_seg_ok(chain[i], chain[j], others, need) and
-                                 _short(chain[i], chain[j], others, soft) <= max(short[i:j]) + 0.5):
-            j -= 1
-        out.append(chain[j])
-        i = j
+    # cut corners: the cheapest set of straight lines through the A* points, each line paying
+    # its length (more next to checkers) + seg_mm for the stop it adds
+    out = _fewest_lines(chain, others, need, clear, soft_mm, seg_mm)
     return round_corners([(float(p[0]), float(p[1])) for p in out], others, need)
 
 

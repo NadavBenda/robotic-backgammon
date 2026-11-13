@@ -160,6 +160,40 @@ def test_collect_puts_a_pushed_checker_back():
     assert last["note"] == "put back by the robot" and worst < 4 and b.bumps == 0, (last["note"], worst, b.bumps)
 
 
+def test_collect_crash_is_logged():
+    """collect.py: an error in the middle of a drag leaves crash.log, the move it was in,
+    and a state the next run starts from (with that move shown)."""
+    import json
+    import tempfile
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    import collect
+    L = Layout.load()
+    b = SimBoard.with_board(rules.OPENING, L, seed=1)
+    d = Path(tempfile.mkdtemp())
+    collect.STATE = d / "state.json"
+    log = collect.run_log(d / "run")
+    col = collect.Collector(b, b.calib, L, d / "run", auto=True, seed=2, log=log)
+    assert col.start()
+    col.step()
+
+    def boom(*a, **k):
+        raise RuntimeError("ERR from the board")
+    col.ex.move_checker = boom
+    try:
+        col.step()
+        raise AssertionError("no error")
+    except RuntimeError:
+        collect.crashed(d / "run", col, log)
+    text = (d / "run" / "crash.log").read_text()
+    assert "ERR from the board" in text and "In the middle of: move 2" in text, text
+    assert "move 2" in (d / "run" / "log.txt").read_text()
+    saved = json.loads(collect.STATE.read_text())
+    assert saved["moving"]["what"].startswith("move 2") and len(saved["checkers"]) == 30
+    col2 = collect.Collector(b, b.calib, L, d / "run2", auto=True, seed=2, log=lambda *a: None)
+    assert col2.start(state=saved["checkers"], moving=saved["moving"])
+
+
 if __name__ == "__main__":
     for k, f in list(globals().items()):
         if k.startswith("test_"):

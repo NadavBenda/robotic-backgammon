@@ -26,8 +26,11 @@ Steps (the photo window tells you what to press at each one):
      expected position, the robot goes on (a false alarm). If it sees a checker where
      none should be and one missing elsewhere (a pushed checker), the robot drags it
      back to its circle once and looks again; when that fixed it, it goes on.
-     Otherwise it stops and shows step 4 again, with the camera's reading as dots and
-     red rings where it differs:
+     Otherwise it stops and shows step 4 again. Marked on the photo: a thick red ring
+     (+ how much it changed) on every spot that changed without the move explaining it,
+     blue on a spot that should have changed and did not, the move itself in yellow, and
+     in a corner a small picture of the difference from the photo before. The camera's
+     reading is shown as dots, with purple rings where it differs:
      d = the dots are right (the robot goes on from what the camera sees; you confirm
      the new circles with Enter), r = the robot puts back along the yellow arrows (when
      it has an offer). q in the photo window = stop after this move.
@@ -36,7 +39,11 @@ Steps (the photo window tells you what to press at each one):
 
 Saved in dataset/<date-time>/: empty_0.jpg, empty_1.jpg, 000.jpg, 001.jpg, ... and
 labels.jsonl (one line per photo: every checker's x, y, colour and place).
-dataset/last_state.json = where the checkers are now (so the next run can go on).
+dataset/last_state.json = where the checkers are now (so the next run can go on), and
+the drag in progress, if any.
+log.txt = everything the run printed, with the time. If an error stops the run:
+crash.log (the error, and which move it was in the middle of) and crash_last_photo.jpg.
+The next run then shows that move as a yellow arrow at the start check.
 """
 import sys  # noqa: E402
 from pathlib import Path as _P
@@ -68,7 +75,9 @@ BAR_MAX = 4            # checkers per bar half (the detector looks at 4 places)
 RANDOM_P = 0.3         # share of moves picked at random; the rest go where the dataset is thinnest
 STOP_COST = 2          # places that changed more / less than the move explains -> stop
 COLOURS = {"robot": (80, 220, 80), "human": (0, 165, 255)}
-DIFF = (60, 60, 255)   # red: where the camera reads something else
+DIFF = (220, 60, 220)  # purple: where the camera (the trained detector) reads something else
+MOVED = (40, 40, 255)  # red: a spot that changed without the move explaining it
+QUIET = (255, 170, 0)  # blue: a spot the move should have changed, and did not
 FIX_MATCH = 14.0       # mm: a checker seen this near an expected one is that checker
 FIX_MAX = 3            # the robot puts back at most this many checkers by itself
 
@@ -166,9 +175,15 @@ class Collector:
                 b[25] = -len(lst)
         return b
 
-    def save_state(self):
+    def save_state(self, moving=None):
+        """Where every checker is, for the next run. moving = the drag about to start
+        ({what, src, goal}): if the run dies in the middle of it, the next run knows which
+        checker may be anywhere between the two."""
         STATE.parent.mkdir(parents=True, exist_ok=True)
-        STATE.write_text(json.dumps({"checkers": self.checkers()}))
+        d = {"checkers": self.checkers()}
+        if moving:
+            d["moving"] = moving
+        STATE.write_text(json.dumps(d))
 
     # -- photos --------------------------------------------------------------
     def photo(self):
@@ -190,13 +205,71 @@ class Collector:
         with open(self.folder / "labels.jsonl", "a", encoding="utf-8") as f:
             f.write(json.dumps(rec) + "\n")
 
-    def drawing(self, img, mark=None, arrow=None, seen=None, fixes=()):
+    def unexplained(self, img, moved):
+        """What the change check holds against this photo, slot by slot:
+        (extra [(xy, score)] changed although the move does not explain it,
+         quiet [xy] the move should have changed them and they did not, names of the places).
+        Only places whose number of changed slots is off count (as in vision.change_cost)."""
+        changed, score = vision.slot_changes(self.prev, img, self.c, self.L)
+        exp = vision._expected(self.L, moved["b0"], moved["b1"])
+        seen, want = {}, {}
+        for (w, _), ch in changed.items():
+            seen[w] = seen.get(w, 0) + int(ch)
+        for w, _ in exp:
+            want[w] = want.get(w, 0) + 1
+        bad = {w for w in set(seen) | set(want) if seen.get(w, 0) != want.get(w, 0)}
+        extra = [(self.L.slot(*k), float(score[k])) for k, ch in changed.items() if ch and k[0] in bad and k not in exp]
+        quiet = [self.L.slot(*k) for k in exp if k[0] in bad and not changed.get(k, False)]
+        cols = sorted(25 - w for w in bad if isinstance(w, int))
+        names = ([("columns " if len(cols) > 1 else "column ") + ", ".join(map(str, cols))] if cols else []) \
+            + sorted(w.replace("off_", "tray ").replace("_", " ") for w in bad if not isinstance(w, int))
+        return extra, quiet, names
+
+    def inset(self, top, img, f, avoid):
+        """A small picture of what differs between the photo before and this one (bright =
+        changed), in the free middle lane, at the end farther from the marks."""
+        import calib
+        a = cv2.cvtColor(calib.view(self.prev, self.c, xmax=self.L.xmax, ymax=self.L.ymax, board=False)[0], cv2.COLOR_BGR2GRAY)
+        b = cv2.cvtColor(calib.view(img, self.c, xmax=self.L.xmax, ymax=self.L.ymax, board=False)[0], cv2.COLOR_BGR2GRAY)
+        d = cv2.GaussianBlur(cv2.absdiff(a, b), (0, 0), 2).astype(np.float32)
+        d = np.clip(d / max(40.0, float(np.percentile(d, 99.9))) * 255, 0, 255).astype(np.uint8)
+        lane0, lane1 = self.L.lane_x()
+        u0, u1 = sorted(float(f.mm_to_px(*self.L.to_magnet(x, self.L.ymax / 2))[0]) for x in (lane0, lane1))
+        w = int(max(120, u1 - u0 - 80))          # between the column numbers
+        h = int(w * top.shape[0] / top.shape[1])
+        small = cv2.applyColorMap(cv2.resize(d, (w, h), interpolation=cv2.INTER_AREA), cv2.COLORMAP_HOT)
+        cv2.rectangle(small, (0, 0), (w - 1, h - 1), (255, 255, 255), 1)
+        cv2.putText(small, "what changed", (5, 14), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1, cv2.LINE_AA)
+        x = int((u0 + u1) / 2 - w / 2)
+        P = [f.mm_to_px(*q) for q in avoid]
+        far = lambda y: min([np.hypot(x + w / 2 - float(u), y + h / 2 - float(v)) for u, v in P] or [0.0])  # noqa: E731
+        y = max((top.shape[0] - h - 90, 30), key=far)      # above the parked cart, or at the top
+        top[y:y + h, x:x + w] = small
+
+    def drawing(self, img, mark=None, arrow=None, seen=None, fixes=(), moved=None):
         """Top view with a circle where every checker should be (the moved one thicker,
         a small cross at each centre), arrow = [xy, ...]: the drag about to be made (its
-        planned path), seen = the camera's reading (dots; red ring where it differs)."""
+        planned path), seen = the camera's reading (dots; purple ring where it differs),
+        moved = {b0, b1, src, goal}: what the change check objects to (Nadav 13.11): a
+        thick red ring + how much it changed on every spot that changed without the move
+        explaining it, blue on a spot that should have changed and did not, the move
+        itself in yellow, and a small before/after difference picture in a corner."""
         import calib
         top, f = calib.view(img, self.c, xmax=self.L.xmax, ymax=self.L.ymax)
         r = int(round(self.L.checker / 2 * f.k))
+        if moved is not None and self.prev is not None:
+            extra, quiet, _ = self.unexplained(img, moved)
+            px = lambda q: tuple(int(t) for t in f.mm_to_px(*q))  # noqa: E731
+            cv2.circle(top, px(moved["src"]), r + 4, (0, 230, 255), 2, cv2.LINE_AA)
+            cv2.arrowedLine(top, px(moved["src"]), px(moved["goal"]), (0, 230, 255), 2, cv2.LINE_AA, tipLength=0.08)
+            for q, sc in extra:
+                u, v = px(q)
+                cv2.circle(top, (u, v), r + 10, MOVED, 5, cv2.LINE_AA)
+                cv2.putText(top, f"{sc:.2f}", (u + r + 12, v + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.55, MOVED, 2, cv2.LINE_AA)
+            for q in quiet:
+                u, v = px(q)
+                cv2.circle(top, (u, v), r + 10, QUIET, 4, cv2.LINE_AA)
+                cv2.putText(top, "no change", (u + r + 12, v + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, QUIET, 2, cv2.LINE_AA)
         for x, y, side, _ in self.checkers():
             u, v = (int(t) for t in f.mm_to_px(x, y))
             thick = 4 if mark is not None and np.hypot(x - mark[0], y - mark[1]) < 1 else 2
@@ -222,6 +295,8 @@ class Collector:
                 cv2.line(top, a, z, (0, 230, 255), 4, cv2.LINE_AA)
             cv2.arrowedLine(top, P[-2], P[-1], (0, 230, 255), 4, cv2.LINE_AA,
                             tipLength=min(0.5, 30 / max(1.0, float(np.hypot(P[-1][0] - P[-2][0], P[-1][1] - P[-2][1])))))
+        if moved is not None and self.prev is not None:
+            self.inset(top, img, f, [q for q, _ in extra] + quiet + [moved["src"], moved["goal"]])
         return top
 
     def key(self, view, lines, keys, default):
@@ -242,19 +317,26 @@ class Collector:
         ui.show(WIN, ui.with_bar(view, lines))
         return (cv2.waitKey(30) & 0xFF) == ord("q")
 
-    def check(self, img, why, mark=None, seen=None):
+    def check(self, img, why, mark=None, seen=None, moved=None, arrow=None):
         """Ask until the photo matches the drawing. Returns the photo to keep, or None (stop).
         seen = the camera's reading (read()): shown as dots, and d takes it as the truth
-        (the drawing then shows it as circles, to be confirmed with Enter like any other)."""
+        (the drawing then shows it as circles, to be confirmed with Enter like any other).
+        moved = {b0, b1, src, goal}: mark what changed beyond this move (drawing())."""
         while True:
             lines = [why]
+            if moved is not None:
+                extra, quiet, names = self.unexplained(img, moved)
+                lines.append((f"Red: changed, not by the move ({len(extra)})  " if extra else "")
+                             + (f"Blue: no change ({len(quiet)})  " if quiet else "")
+                             + ("at " + ", ".join(names) if names else "Now only the move itself changed"))
             if seen is not None and seen["diff"]:
-                lines.append("Camera (dots) differs at: " + ", ".join(seen["text"][:4]))
+                lines.append("Camera (dots, purple) differs: " + ", ".join(seen["text"][:2])
+                             + (f" +{len(seen['text']) - 2}" if len(seen["text"]) > 2 else ""))
             fixes = self.plan_fix(img, seen) if seen is not None and seen["diff"] else []
-            lines.append("Every checker inside its circle?  Enter=yes   f=I moved them, look again"
-                         + ("   d=the dots are right" if seen is not None and seen["diff"] else "")
-                         + ("   r=robot puts back (yellow arrows)" if fixes else "") + "   q=stop")
-            k = self.key(self.drawing(img, mark, seen=seen, fixes=fixes), lines, "\rfdrq", "\r")
+            lines.append("Enter=the circles are right   f=I fixed it by hand, look again   q=stop")
+            if seen is not None and seen["diff"]:
+                lines.append("d=the dots are right" + ("   r=robot puts back (yellow arrows)" if fixes else ""))
+            k = self.key(self.drawing(img, mark, arrow=arrow, seen=seen, fixes=fixes, moved=moved), lines, "\rfdrq", "\r")
             if k == "\r":
                 return img
             if k == "q":
@@ -263,7 +345,7 @@ class Collector:
                 self.fix(fixes)
             if k == "d" and seen is not None and seen["diff"]:
                 self.take(seen["checkers"])
-                why, seen, mark = "The camera's reading is now the position: are the circles right?", None, None
+                why, seen, mark, moved = "The camera's reading is now the position: are the circles right?", None, None, None
                 continue
             img = self.photo()
             seen = self.read(img) if seen is not None else None
@@ -385,12 +467,19 @@ class Collector:
         self.log("   2 photos of the empty board saved")
         return True
 
-    def start(self, board=None, state=None):
+    def start(self, board=None, state=None, moving=None):
+        """moving: the drag the last run died in ({what, src, goal}); shown as a yellow
+        arrow, that checker may be anywhere along it."""
         if state:
             self.set_state(state)
         else:
             self.set_board(board or rules.OPENING)
-        img = self.check(self.photo(), "Start: put the checkers inside the circles (f = look again)")
+        why = "Start: put the checkers inside the circles (f = look again)"
+        arrow = None
+        if state and moving:
+            why = f"Last run stopped in {moving['what']}: put that checker (yellow) back in its circle"
+            arrow = [tuple(moving["src"]), tuple(moving["goal"])]
+        img = self.check(self.photo(), why, arrow=arrow)
         if img is None:
             return False
         self.save(img, f"{self.n:03d}.jpg", "start")
@@ -472,13 +561,16 @@ class Collector:
         if self.peek(self.drawing(self.prev, arrow=path), ["next: " + what, "q = stop (before this move)"]):
             return False
         b0 = self.board()
+        self.log(f"   {what}")       # before the drag, so the log shows what was going on if it dies here
+        self.save_state(moving={"what": what, "src": [float(src[0]), float(src[1])],
+                                "goal": [float(goal[0]), float(goal[1])]})
         self.ex.move_checker(frm, to, side, goal=goal)
         b1 = self.board()
         self.save_state()
         img = self.photo()
         changed, _ = vision.slot_changes(self.prev, img, self.c, self.L)
         cost = vision.change_cost(changed, self.L, b0, b1)
-        self.log(f"   {what}   change check {cost}")
+        self.log(f"      change check {cost}")
         note = ""
         if cost >= STOP_COST:
             # a second opinion before stopping (Nadav 13.11): the trained detector reads the
@@ -502,8 +594,8 @@ class Collector:
                         note = "put back by the robot"
                         self.log(f"   now the change check is {cost}: going on")
             if not ok:
-                img = self.check(img, f"{what}: more changed than this move. Look at the circles",
-                                 mark=goal, seen=seen)
+                img = self.check(img, f"{what}: more changed than this move",
+                                 mark=goal, seen=seen, moved={"b0": b0, "b1": b1, "src": src, "goal": goal})
                 if img is None:
                     return False
                 note = "checked by hand"
@@ -528,6 +620,48 @@ def ask_int(prompt, default):
         return default
 
 
+def run_log(folder):
+    """A log(...) that prints and also writes every line, with the time, to <run>/log.txt.
+    A hard crash of Python itself (no error message) is written there too."""
+    import faulthandler
+    folder.mkdir(parents=True, exist_ok=True)
+    f = open(folder / "log.txt", "a", encoding="utf-8", buffering=1)
+    faulthandler.enable(f)
+
+    def log(*a):
+        print(*a)
+        f.write(f"{datetime.now():%H:%M:%S} " + " ".join(str(x) for x in a) + "\n")
+    return log
+
+
+def crashed(folder, col, log):
+    """An error stopped the run: say why, and keep it in <run>/crash.log (Nadav 13.11)."""
+    import traceback
+    tb = traceback.format_exc()
+    last = ""
+    try:
+        if STATE.exists():
+            last = (json.loads(STATE.read_text()).get("moving") or {}).get("what", "")
+    except (OSError, ValueError):
+        pass
+    text = (f"{datetime.now().isoformat(timespec='seconds')}\n"
+            + (f"In the middle of: {last}\n" if last else "Not in the middle of a move.\n")
+            + (f"Photos saved so far: {col.n}\n" if col is not None else "Before the first photo.\n")
+            + "\n" + tb)
+    try:
+        (folder / "crash.log").write_text(text, encoding="utf-8")
+        if col is not None and col.prev is not None:
+            cv2.imencode(".jpg", col.prev)[1].tofile(str(folder / "crash_last_photo.jpg"))
+    except OSError:
+        pass
+    log("\n" + tb)
+    log("collect stopped on an error (the last line above says which).")
+    if last:
+        log(f"It was in the middle of: {last}")
+    log(f"Written in {folder / 'crash.log'}")
+    log("The position is saved. To go on: run collect.py again, s (skip the empty photos), Enter.")
+
+
 def main():
     import calib
     from board import Board
@@ -536,28 +670,35 @@ def main():
     c = calib.load()
     moves = ask_int("How many moves this run? Enter = 10 (a short first try): ", 10)
     folder = DATA / f"{datetime.now():%Y%m%d-%H%M%S}"
-    with Board() as b:
-        b.home_if_needed()
-        col = Collector(b, c, L, folder)
-        state = None
-        if not col.empty_board() and STATE.exists():
-            k = col.key(col.photo(), ["Are the checkers where the last run left them?",
-                                      "Enter = yes   o = no, I will set up the opening"], "\ro", "o")
+    log = run_log(folder)
+    col = None
+    try:
+        with Board() as b:
+            b.home_if_needed()
+            col = Collector(b, c, L, folder, log=log)
+            state = moving = None
+            if not col.empty_board() and STATE.exists():
+                k = col.key(col.photo(), ["Are the checkers where the last run left them?",
+                                          "Enter = yes   o = no, I will set up the opening"], "\ro", "o")
+                if k == "\r":
+                    saved = json.loads(STATE.read_text())
+                    state, moving = saved["checkers"], saved.get("moving")
+            if not col.start(state=state, moving=moving):
+                log("Stopped.")
+                return
+            for _ in range(moves):
+                if not col.step():
+                    break
+            k = col.key(col.drawing(col.prev), ["Done.  Enter = put everything back in the opening",
+                                                "n = leave the checkers as they are"], "\rn", "n")
             if k == "\r":
-                state = json.loads(STATE.read_text())["checkers"]
-        if not col.start(state=state):
-            print("Stopped.")
-            return
-        for _ in range(moves):
-            if not col.step():
-                break
-        k = col.key(col.drawing(col.prev), ["Done.  Enter = put everything back in the opening",
-                                            "n = leave the checkers as they are"], "\rn", "n")
-        if k == "\r":
-            col.back_to_opening()
-        col.ex.park()
+                col.back_to_opening()
+            col.ex.park()
+    except Exception:
+        crashed(folder, col, log)
+        sys.exit(1)
     cv2.destroyAllWindows()
-    print(f"Done: {col.n} photos in {folder}")
+    log(f"Done: {col.n} photos in {folder}")
 
 
 if __name__ == "__main__":
