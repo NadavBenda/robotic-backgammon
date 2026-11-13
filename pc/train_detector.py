@@ -22,12 +22,26 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+import cnn
 import learned
 import ui
 import vision
 
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "dataset"
+USE_CNN = cnn.available()
+
+
+def cnn_samples(photos, L, with_empty=True):
+    """[(images, extra, labels)] for cnn.Detector.train / board."""
+    out = []
+    for p in photos:
+        a = p["crop"].astype(np.float32)
+        has = with_empty and p["empty"] is not None
+        b = p["empty"].astype(np.float32) if has else np.zeros_like(a)
+        e = (p["F"] if has else p["F0"]).astype(np.float32)
+        out.append((np.stack([a, b], 1), e, p["y"]))
+    return out
 
 
 def imread(p):
@@ -45,6 +59,7 @@ def load_runs(c, L, log=print):
         folder = lab.parent
         e = folder / "empty_0.jpg"
         empty = imread(e) if e.exists() else None
+        ecrop = cnn.crops(empty, c, L).astype(np.float16) if USE_CNN and empty is not None else None
         photos = []
         for line in lab.read_text(encoding="utf-8").splitlines():
             rec = json.loads(line)
@@ -54,8 +69,11 @@ def load_runs(c, L, log=print):
             y = learned.labels(rec["checkers"], L)
             F0 = learned.features(img, c, L, None)
             F = learned.features(img, c, L, empty) if empty is not None else F0
-            photos.append({"img": img, "board": rec["board"], "F": F, "F0": F0, "y": y,
-                           "note": rec.get("note", "")})
+            ph = {"img": img, "board": rec["board"], "F": F, "F0": F0, "y": y, "note": rec.get("note", "")}
+            if USE_CNN:
+                ph["crop"] = cnn.crops(img, c, L).astype(np.float16)
+                ph["empty"] = ecrop
+            photos.append(ph)
         if photos:
             runs.append({"name": folder.name, "photos": photos, "empty": empty is not None})
             log(f"   {folder.name}: {len(photos)} photos" + ("" if empty is not None else "  (no empty-board photo)"))
@@ -93,16 +111,24 @@ def evaluate(runs, c, L, log=print):
         ph = runs[0]["photos"]
         cut = max(1, int(len(ph) * 0.7))
         tests.append((runs[0]["name"] + " (last 30%)", ph[:cut], ph[cut:] or ph[-1:]))
-    tot_l, tot_n = [], []
+    tot_l, tot_n, tot_c = [], [], []
     for name, train, test in tests:
         det = learned.Detector.train(samples(train), L)
         el = [wrong(det.board(p["F0"], L), p["board"]) for p in test]
         en = norm_errors([train[0]] + test, c, L)[1:] if len(runs) < 2 else norm_errors(test, c, L)
         tot_l += el
         tot_n += en
-        log(f"   {name}: {len(test)} photos   learned {np.mean(el):.1f} wrong/photo "
-            f"({sum(e == 0 for e in el)} perfect)   norm {np.mean(en):.1f} ({sum(e == 0 for e in en)} perfect)")
-    return float(np.mean(tot_l)), float(np.mean(tot_n))
+        line = (f"   {name}: {len(test)} photos   features-net {np.mean(el):.1f} wrong/photo "
+                f"({sum(e == 0 for e in el)} perfect)   norm {np.mean(en):.1f} ({sum(e == 0 for e in en)} perfect)")
+        if USE_CNN:
+            log("   training the pixel network (a few minutes)...")
+            cd = cnn.Detector.train(cnn_samples(train, L))
+            ec = [wrong(cd.board(x, e, L), p["board"])
+                  for (x, e, _), p in zip(cnn_samples(test, L, with_empty=False), test)]
+            tot_c += ec
+            line += f"   pixel-net {np.mean(ec):.1f} ({sum(e == 0 for e in ec)} perfect)"
+        log(line)
+    return float(np.mean(tot_l)), float(np.mean(tot_n)), (float(np.mean(tot_c)) if tot_c else None)
 
 
 def main():
@@ -120,13 +146,24 @@ def report(c, L, save=True):
         return
     n = sum(len(r["photos"]) for r in runs)
     print(f"{n} photos in {len(runs)} run(s). Checking on photos it did not learn from:")
-    ml, mn = evaluate(runs, c, L)
-    det = learned.Detector.train(samples([p for r in runs for p in r["photos"]]), L)
+    ml, mn, mc = evaluate(runs, c, L)
+    allp = [p for r in runs for p in r["photos"]]
+    det = learned.Detector.train(samples(allp), L)
     if save:
-        det.save(photos=n, runs=len(runs), learned_wrong=ml, norm_wrong=mn)
-    print(f"\nAverage wrong checkers per photo: learned {ml:.1f}, norm {mn:.1f}.")
-    print(("Saved detector.json." if save else "") + ("  The learned detector is better." if ml < mn else
-                                     "  It is NOT better than norm yet: more photos needed."))
+        det.save(photos=n, runs=len(runs), learned_wrong=ml, norm_wrong=mn, cnn_wrong=mc)
+    print(f"\nAverage wrong checkers per photo (on photos it did not learn from):")
+    print(f"   norm (now in use)   {mn:.1f}")
+    print(f"   features-net        {ml:.1f}   -> vision = learned")
+    if mc is not None:
+        print(f"   pixel-net           {mc:.1f}   -> vision = cnn")
+        print("Training the pixel network on everything...")
+        cd = cnn.Detector.train(cnn_samples(allp, L))
+        if save:
+            cd.save()
+    else:
+        print("   pixel-net: PyTorch is not installed, skipped")
+    best = min([("norm", mn), ("learned", ml)] + ([("cnn", mc)] if mc is not None else []), key=lambda t: t[1])
+    print(("Saved." if save else "") + f"  Best: {best[0]}. Choose it in the game page (vision).")
 
 
 if __name__ == "__main__":

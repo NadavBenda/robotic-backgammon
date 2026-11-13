@@ -1,0 +1,167 @@
+"""Checker detection by a small convolutional network on the pixels (needs PyTorch).
+
+Per slot a 48 x 48 top-view crop (64 mm square: the slot and its neighbours) goes in,
+with the same crop of the empty-board photo when there is one, plus the ~17 numbers
+learned.features computes for that slot (they join the network before its last layers,
+so it starts from what is already known and can still find more in the pixels); out come
+empty / robot / human. A point (column) gets one colour: the sum over its checkers of
+how sure each one is of robot vs human. At most 15 per colour.
+
+    import cnn
+    det = cnn.Detector.load()                      # detector_cnn.pt next to the scripts
+    ck = det.find(img, c, L, empty=None)           # [(x, y, side)]
+"""
+from pathlib import Path
+
+import cv2
+import numpy as np
+
+import learned
+
+PATH = Path(__file__).resolve().parents[1] / "detector_cnn.pt"
+SIZE, SPAN = 48, 64.0      # crop pixels, crop mm
+
+
+def available():
+    try:
+        import torch  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def crops(img, c, L):
+    """(N, SIZE, SIZE) float32 grey crops, each divided by its bright (glass) level."""
+    S = learned.slots(L)
+    xy = np.array([q for _, _, q in S], float)
+    t = (np.arange(SIZE) + 0.5) / SIZE * SPAN - SPAN / 2
+    gx, gy = np.meshgrid(t, t)
+    X = xy[:, 0, None, None] + gx[None]
+    Y = xy[:, 1, None, None] + gy[None]
+    u, v = c.mm_to_px(X.reshape(-1), Y.reshape(-1))
+    u = np.asarray(u, np.float32).reshape(len(S) * SIZE, SIZE)
+    v = np.asarray(v, np.float32).reshape(len(S) * SIZE, SIZE)
+    g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    out = cv2.remap(g, u, v, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE).astype(np.float32)
+    out = out.reshape(len(S), SIZE, SIZE)
+    level = np.percentile(out.reshape(len(S), -1), 90, axis=1)[:, None, None]
+    return out / np.maximum(level, 1.0)
+
+
+def inputs(img, c, L, empty=None):
+    """(images (N, 2, SIZE, SIZE), extra (N, F)): crop, empty crop (or zeros); learned.features."""
+    a = crops(img, c, L)
+    b = crops(empty, c, L) if empty is not None else np.zeros_like(a)
+    extra = learned.features(img, c, L, empty).astype(np.float32)
+    return np.stack([a, b], 1).astype(np.float32), extra
+
+
+def _net(n_extra):
+    import torch.nn as nn
+
+    class Net(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.f = nn.Sequential(
+                nn.Conv2d(2, 16, 3, padding=1), nn.ReLU(), nn.MaxPool2d(2),     # 24
+                nn.Conv2d(16, 32, 3, padding=1), nn.ReLU(), nn.MaxPool2d(2),    # 12
+                nn.Conv2d(32, 64, 3, padding=1), nn.ReLU(), nn.MaxPool2d(2),    # 6
+                nn.Flatten())
+            self.h = nn.Sequential(nn.Linear(64 * 36 + n_extra, 64), nn.ReLU(), nn.Dropout(0.2), nn.Linear(64, 3))
+
+        def forward(self, x, e):
+            import torch
+            return self.h(torch.cat([self.f(x), e], 1))
+    return Net()
+
+
+class Detector:
+    def __init__(self, net=None, mu=None, sd=None):
+        self.net, self.mu, self.sd = net, mu, sd
+
+    @classmethod
+    def train(cls, samples, epochs=12, seed=0, log=None):
+        """samples: [(images, extra, labels)] per photo (labels from learned.labels)."""
+        import torch
+        torch.manual_seed(seed)
+        X = torch.from_numpy(np.concatenate([s[0] for s in samples]))
+        E = torch.from_numpy(np.concatenate([s[1] for s in samples]))
+        Y = torch.from_numpy(np.concatenate([s[2] for s in samples])).long()
+        mu, sd = E.mean(0), E.std(0).clamp(min=0.05)
+        mu[-2:], sd[-2:] = 0.0, 1.0     # empty-photo ratio and flag: switched by the augmentation below
+        net = _net(E.shape[1])
+        opt = torch.optim.Adam(net.parameters(), 1e-3, weight_decay=1e-4)
+        cnt = torch.bincount(Y, minlength=3).float().clamp(min=1)
+        lossf = torch.nn.CrossEntropyLoss(weight=(cnt.sum() / cnt) / 3)
+        g = torch.Generator().manual_seed(seed)
+        for ep in range(epochs):
+            net.train()
+            perm = torch.randperm(len(Y), generator=g)
+            tot = 0.0
+            for k in range(0, len(Y), 256):
+                i = perm[k:k + 256]
+                x, e = X[i].clone(), E[i].clone()
+                # small shifts (sloppy placement / calibration drift), brightness, sometimes no empty photo
+                dx, dy = (int(v) for v in torch.randint(-4, 5, (2,), generator=g))
+                x = torch.roll(x, (dy, dx), (2, 3))
+                x[:, 0] *= 0.85 + 0.3 * torch.rand(len(i), 1, 1, generator=g)
+                drop = torch.rand(len(i), generator=g) < 0.5
+                x[drop, 1] = 0
+                e[drop, -2] = 1.0     # learned.features without an empty photo: ratio 1, flag 1
+                e[drop, -1] = 1.0
+                opt.zero_grad()
+                loss = lossf(net(x, (e - mu) / sd), Y[i])
+                loss.backward()
+                opt.step()
+                tot += float(loss.detach()) * len(i)
+            if log:
+                log(f"      epoch {ep + 1}/{epochs}  loss {tot / len(Y):.3f}")
+        net.eval()
+        return cls(net, mu, sd)
+
+    def probs(self, x, e):
+        import torch
+        with torch.no_grad():
+            e = (torch.from_numpy(e) - self.mu) / self.sd
+            return torch.softmax(self.net(torch.from_numpy(x), e), 1).numpy()
+
+    def find_x(self, x, e, L):
+        P = self.probs(x, e)
+        S = learned.slots(L)
+        present = P[:, 0] < 0.5
+        out = []
+        for p in range(1, 25):
+            idx = [k for k, (w, _, _) in enumerate(S) if w == p and present[k]]
+            if not idx:
+                continue
+            vote = float(np.sum(np.log(P[idx, 1] + 1e-6) - np.log(P[idx, 2] + 1e-6)))
+            side = "robot" if vote > 0 else "human"
+            out += [(1 - P[k, 0], *S[k][2], side) for k in idx]
+        for k, (w, _, xy) in enumerate(S):
+            if not isinstance(w, int) and present[k]:
+                out.append((1 - P[k, 0], *xy, w.split("_")[1]))
+        for s in ("robot", "human"):   # never more than 15 of a colour: drop the least sure
+            mine = sorted([o for o in out if o[3] == s])
+            while len(mine) > 15:
+                out.remove(mine.pop(0))
+        return [(float(x), float(y), s) for _, x, y, s in out]
+
+    def find(self, img, c, L, empty=None):
+        return self.find_x(*inputs(img, c, L, empty), L)
+
+    def board(self, x, e, L):
+        import vision
+        return vision.summarize(self.find_x(x, e, L), L).board
+
+    def save(self, path=PATH):
+        import torch
+        torch.save({"state": self.net.state_dict(), "mu": self.mu, "sd": self.sd}, str(path))
+
+    @classmethod
+    def load(cls, path=PATH):
+        import torch
+        d = torch.load(str(path), map_location="cpu")
+        net = _net(len(d["mu"]))
+        net.load_state_dict(d["state"])
+        net.eval()
+        return cls(net, d["mu"], d["sd"])

@@ -343,6 +343,14 @@ _detector = {}
 
 
 def read(img, c, L, model, method="scan"):
+    if method == "cnn":       # detector_cnn.pt from train_detector.py (needs PyTorch)
+        import cnn
+        if "cnn" not in _detector:
+            try:
+                _detector["cnn"] = cnn.Detector.load()
+            except (OSError, ImportError):
+                raise ValueError("no pixel network yet: install PyTorch, run collect.py, then train_detector.py") from None
+        return summarize(_detector["cnn"].find(img, c, L), L)
     if method == "learned":   # detector.json from train_detector.py
         import learned
         if "d" not in _detector:

@@ -1,6 +1,6 @@
 # PC side
 
-Talks to `firmware/board` over USB serial (no Wi-Fi). Needs `pip install pyserial opencv-python numpy`.
+Talks to `firmware/board` over USB serial (no Wi-Fi). Needs `pip install pyserial opencv-python numpy` (and `torch` for the pixel network of train_detector.py, optional).
 
 **Folder:** the top level holds only the scripts you run (double-click) and their data
 (`calib.json`, `layout.json`, `vision_model.json`, `captures/`, `games/`). All internal code is in
