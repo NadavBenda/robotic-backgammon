@@ -226,3 +226,4 @@ pc/games/
 # labelled photos from collect.py (stay on the PC)
 pc/dataset/
 pc/detector.json
+pc/detector_cnn.pt
