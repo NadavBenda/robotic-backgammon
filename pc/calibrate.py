@@ -57,15 +57,36 @@ def grid(n, xmax, ymax, margin):
 
 
 
-def predict(px, mm, target, n):
-    """Where the next point should be in the photo, from the points measured so far."""
-    if len(px) < n + 2:  # need points from 2 rows, one row is a line
+def predict(px, mm, target, n, old=None):
+    """Where the next point should be in the photo. From two rows of points measured now:
+    their homography. Before that, with an earlier calib.json: its guess, corrected by the
+    points measured so far (1 point: shift, then shift+turn+scale, affine once 2 rows started), so even the
+    first points are guessed well after the camera moved a little."""
+    if len(px) >= n + 2:  # two rows: a homography of the new points alone
+        H, _ = cv2.findHomography(np.float32(mm), np.float32(px))
+        if H is not None:
+            p = H @ np.array([target[0], target[1], 1.0])
+            return p[0] / p[2], p[1] / p[2]
+    if old is None:
         return None
-    H, _ = cv2.findHomography(np.float32(mm), np.float32(px))
-    if H is None:
-        return None
-    p = H @ np.array([target[0], target[1], 1.0])
-    return p[0] / p[2], p[1] / p[2]
+    base = np.float32([old.mm_to_px(*target)]).reshape(1, 2)
+    if not px:
+        return float(base[0, 0]), float(base[0, 1])
+    src = np.float32([old.mm_to_px(*q) for q in mm]).reshape(-1, 2)
+    dst = np.float32(px).reshape(-1, 2)
+    if len(px) == 1:
+        p = base + (dst - src)
+    else:
+        m = np.float32(mm)
+        if len(px) >= 4 and np.ptp(m[:, 0]) > 1 and np.ptp(m[:, 1]) > 1:   # not all on one row
+            A, _ = cv2.estimateAffine2D(src, dst)
+        else:
+            A, _ = cv2.estimateAffinePartial2D(src, dst)
+        if A is None:
+            p = base + (dst - src).mean(0)
+        else:
+            p = base @ A[:, :2].T + A[:, 2]
+    return float(p[0, 0]), float(p[0, 1])
 
 
 def live_maps(px, mm, n):
@@ -129,7 +150,7 @@ def run(args):
                 s = img.shape[1] / 1024
                 if old is not None and tuple(old.size) != (img.shape[1], img.shape[0]):
                     old = None  # made for another camera resolution: its ellipses would be wrong
-                pred = predict(px, mm, (x, y), args.n)
+                pred = predict(px, mm, (x, y), args.n, old)
                 circles = find_circles(img)
                 guess = None
                 if circles:
