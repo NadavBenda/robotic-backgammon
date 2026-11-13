@@ -55,7 +55,7 @@ DEFAULTS = {
     "engine": "gnubg",           # gnubg | simple | random
     "dice": "digital",           # digital | typed | camera
     "human_move": "done_button",  # done_button | auto | robot_moves
-    "vision": "norm",            # norm | learned | cnn (train_detector.py) | scan | slots | hough
+    "vision": "norm",            # norm | learned | cnn | both (train_detector.py) | scan | slots | hough
     "coach": False,              # watch / human turns: show gnubg's choice
     "first": "roll",             # roll (opening roll) | robot | human
     "board": "auto",             # auto (real, else simulator) | real | sim

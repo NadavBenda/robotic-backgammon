@@ -176,11 +176,11 @@ class Detector:
 
     # -- training -------------------------------------------------------------
     @classmethod
-    def train(cls, samples, L):
+    def train(cls, samples, L, seed=0):
         """samples: [(F, y)] from features() and labels()."""
         X = np.vstack([F for F, _ in samples])
         y = np.concatenate([yy for _, yy in samples])
-        pres = MLP(X.shape[1]).fit(X, (y > 0).astype(float))
+        pres = MLP(X.shape[1], seed=seed).fit(X, (y > 0).astype(float))
         R, t = [], []
         for F, yy in samples:
             pts, rows = colour_rows(F, yy > 0, L)
@@ -189,7 +189,7 @@ class Detector:
                 k = next(k for k, (w, _, _) in enumerate(S) if w == p and yy[k] > 0)
                 R.append(row)
                 t.append(1.0 if yy[k] == 1 else 0.0)
-        col = MLP(len(R[0]), hidden=8).fit(np.array(R), np.array(t)) if R else None
+        col = MLP(len(R[0]), hidden=8, seed=seed).fit(np.array(R), np.array(t)) if R else None
         return cls(pres, col)
 
     # -- use ------------------------------------------------------------------
@@ -224,6 +224,13 @@ class Detector:
 
     def board(self, F, L):
         return vision.summarize(self.find_f(F, L)[0], L).board
+
+    def colour_prob(self, F, present, L):
+        """{point: P(robot)} for the points with present checkers."""
+        pts, rows = colour_rows(F, present, L)
+        if not len(pts) or self.colour is None:
+            return {}
+        return dict(zip(pts, self.colour.prob(rows)))
 
     # -- file -----------------------------------------------------------------
     def save(self, path=PATH, **extra):
