@@ -166,7 +166,8 @@ def plan(start, goal, others=(), xmax=XMAX, ymax=YMAX, clear=CLEAR, soft_mm=SOFT
     return round_corners([(float(p[0]), float(p[1])) for p in out], others, need)
 
 
-FREE_CLEAR = 22.0   # magnet off: keep the cart this far from checker centres (not right under one)
+FREE_CLEARS = (40.0, 32.0, 25.0, 18.0, 14.0)  # magnet off: the first of these (mm from checker centres) that has a way
+FREE_SOFT = 45.0    # and within it, prefer staying this far (Nadav 13.11: the core still pulls checkers it passes near)
 
 
 def travel(b, frm, to, others=(), xmax=XMAX, ymax=YMAX):
@@ -183,9 +184,9 @@ def travel(b, frm, to, others=(), xmax=XMAX, ymax=YMAX):
     if len(o):
         o = o[(np.hypot(*(o - f).T) > 13) & (np.hypot(*(o - t).T) > 13)]
     path = [tuple(f), tuple(t)]
-    for clear in (FREE_CLEAR, 15.0):
+    for clear in FREE_CLEARS:
         try:
-            path = plan(f, t, o, xmax, ymax, clear=clear, soft_mm=clear)
+            path = plan(f, t, o, xmax, ymax, clear=clear, soft_mm=max(FREE_SOFT, clear))
             break
         except NoPath:
             continue
