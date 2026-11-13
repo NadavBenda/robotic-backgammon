@@ -82,8 +82,7 @@ def clearance(path, others):
 def _fewest_lines(chain, others, need, clear, soft_mm, seg_mm):
     """The corners to keep out of an A* chain: the cheapest way through its points, where a
     line costs its length (more next to checkers, as in the A*) + seg_mm for being one more
-    line, and a corner sharp enough to be cut (round_corners adds a short line there) costs
-    seg_mm more. A line may skip points only when it keeps the hard distance to every checker."""
+    line (Nadav 13.11: a sharp corner costs the same as any other). A line may skip points only when it keeps the hard distance to every checker."""
     P = np.asarray(chain, float)
     n = len(P)
     if n <= 2:
@@ -110,13 +109,12 @@ def _fewest_lines(chain, others, need, clear, soft_mm, seg_mm):
     best = np.full((n, n), np.inf)       # best[i, j]: the cheapest path from the start that ends with line i -> j
     back = np.zeros((n, n), int)
     best[0] = C[0]
-    cos_min = np.cos(np.radians(ROUND_MIN_DEG))
     for j in range(1, n - 1):
         din = P[j] - P[:j]
         dout = P[j + 1:] - P[j]
         din = din / np.maximum(np.hypot(din[:, 0], din[:, 1]), 1e-9)[:, None]
         dout = dout / np.maximum(np.hypot(dout[:, 0], dout[:, 1]), 1e-9)[:, None]
-        cand = best[:j, j][:, None] + seg_mm * ((din @ dout.T) < cos_min)       # (incoming, outgoing)
+        cand = best[:j, j][:, None] + 0.0 * (din @ dout.T)       # (incoming, outgoing); no extra for sharp corners
         k = np.argmin(cand, axis=0)
         best[j, j + 1:] = cand[k, np.arange(cand.shape[1])] + C[j, j + 1:]
         back[j, j + 1:] = k

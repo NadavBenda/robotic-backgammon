@@ -143,14 +143,36 @@ class MLP:
         H = np.tanh(Z @ self.W1 + self.b1)
         return 1 / (1 + np.exp(-(H @ self.W2 + self.b2)[:, 0]))
 
-    def fit(self, X, y, epochs=600, lr=0.02, l2=1e-3):
+    def loss(self, X, y):
+        p = np.clip(self.prob(X), 1e-6, 1 - 1e-6)
+        w = np.where(y == 1, 0.5 / max(y.mean(), 1e-3), 0.5 / max(1 - y.mean(), 1e-3))
+        return float(np.mean(-w * (y * np.log(p) + (1 - y) * np.log(1 - p))))
+
+    def fit(self, X, y, epochs=1500, lr=0.02, l2=1e-3, val=None, every=20, patience=8):
+        """val = (Xv, yv), photos it does not learn from: every `every` steps it checks the
+        loss there, keeps the best weights, and stops after `patience` checks without a
+        better one (early stopping: past that point it only learns the training photos by
+        heart). Without val: a fixed `epochs`."""
         self.mu, self.sd = X.mean(0), X.std(0) + 1e-6
         Z = (X - self.mu) / self.sd
         w = np.where(y == 1, 0.5 / max(y.mean(), 1e-3), 0.5 / max(1 - y.mean(), 1e-3))   # balance classes
         params = [self.W1, self.b1, self.W2, self.b2]
         m = [np.zeros_like(p) for p in params]
         v = [np.zeros_like(p) for p in params]
+        if val is None:
+            epochs = min(epochs, 600)      # no photos to check on: the old fixed length
+        best, keep, bad = np.inf, None, 0
+        self.stopped_at = epochs
         for t in range(1, epochs + 1):
+            if val is not None and t % every == 0:
+                lv = self.loss(*val)
+                if lv < best - 1e-4:
+                    best, keep, bad = lv, [p.copy() for p in params], 0
+                else:
+                    bad += 1
+                    if bad >= patience:
+                        self.stopped_at = t
+                        break
             H = np.tanh(Z @ self.W1 + self.b1)
             p = 1 / (1 + np.exp(-(H @ self.W2 + self.b2)[:, 0]))
             d = (p - y) * w / len(y)
@@ -163,10 +185,25 @@ class MLP:
                 m[k] = 0.9 * m[k] + 0.1 * gr
                 v[k] = 0.999 * v[k] + 0.001 * gr ** 2
                 params[k] -= lr * (m[k] / (1 - 0.9 ** t)) / (np.sqrt(v[k] / (1 - 0.999 ** t)) + 1e-8)
+        if keep is not None:
+            for p, k in zip(params, keep):
+                p[...] = k
         return self
 
     def dump(self):
         return {k: getattr(self, k).tolist() for k in ("W1", "b1", "W2", "b2", "mu", "sd")}
+
+
+def split(samples, share=0.15):
+    """(learn, check): the last share of the photos are kept apart to tell when to stop.
+    The two copies of a photo (with / without the empty board) stay on the same side."""
+    n = len(samples)
+    if n < 8:
+        return samples, []
+    k = n - max(2, int(round(n * share)))
+    while 0 < k < n and samples[k][1] is samples[k - 1][1]:   # same photo's labels
+        k += 1
+    return samples[:k], samples[k:]
 
     @classmethod
     def from_dict(cls, d):
@@ -184,18 +221,27 @@ class Detector:
     @classmethod
     def train(cls, samples, L, seed=0):
         """samples: [(F, y)] from features() and labels()."""
-        X = np.vstack([F for F, _ in samples])
-        y = np.concatenate([yy for _, yy in samples])
-        pres = MLP(X.shape[1], seed=seed).fit(X, (y > 0).astype(float))
-        R, t = [], []
-        for F, yy in samples:
-            pts, rows = colour_rows(F, yy > 0, L)
+        learn, check = split(samples)
+
+        def stack(ss):
+            if not ss:
+                return None
+            return np.vstack([F for F, _ in ss]), (np.concatenate([yy for _, yy in ss]) > 0).astype(float)
+
+        def colour(ss):
+            R, t = [], []
             S = slots(L)
-            for p, row in zip(pts, rows):
-                k = next(k for k, (w, _, _) in enumerate(S) if w == p and yy[k] > 0)
-                R.append(row)
-                t.append(1.0 if yy[k] == 1 else 0.0)
-        col = MLP(len(R[0]), hidden=8, seed=seed).fit(np.array(R), np.array(t)) if R else None
+            for F, yy in ss:
+                pts, rows = colour_rows(F, yy > 0, L)
+                for p, row in zip(pts, rows):
+                    k = next(k for k, (w, _, _) in enumerate(S) if w == p and yy[k] > 0)
+                    R.append(row)
+                    t.append(1.0 if yy[k] == 1 else 0.0)
+            return (np.array(R), np.array(t)) if R else None
+        X, y = stack(learn)
+        pres = MLP(X.shape[1], seed=seed).fit(X, y, val=stack(check))
+        cl, cv = colour(learn), colour(check)
+        col = MLP(cl[0].shape[1], hidden=8, seed=seed).fit(*cl, val=cv if cv and len(set(cv[1])) > 1 else None) if cl else None
         return cls(pres, col)
 
     # -- use ------------------------------------------------------------------
