@@ -2,7 +2,8 @@
 
     py place_opening.py     (double-click)
 
-The magnet cart drives under each place of the opening position, one after the other.
+The magnet cart drives under each place of the opening position, one after the other,
+around the checkers already placed.
 You see the cart through the glass: put a checker right above it and press Enter.
 The magnet then turns on for a moment, so the checker slides to the exact centre.
 First the robot's 15 checkers (one colour), then your 15 (the other colour).
@@ -15,6 +16,7 @@ sys.path.insert(0, str(_P(__file__).resolve().parent / "lib"))  # the internal c
 
 import time
 
+import paths
 import rules
 import ui
 from board import Board
@@ -47,23 +49,28 @@ def main():
     with Board() as b:
         b.home_if_needed()
         k = 0
+        cart, placed = None, {}   # placed: k -> (x, y) of the checkers already on the glass
         while k < len(todo):
             side, where, i, (x, y) = todo[k]
             if k == 0 or todo[k - 1][0] != side:
                 print("\n=== " + ("ROBOT's colour (15)" if side == "robot" else "YOUR colour (15)") + " ===")
-            b.move(x, y)
+            # magnet off: around the checkers already placed (they could be dragged along)
+            paths.travel(b, cart, (x, y), list(placed.values()), L.xmax, L.ymax)
+            cart = (x, y)
             ans = input(f"[{k + 1}/30] {name(side, where)}, checker {i + 1}: put it above the cart, Enter ").strip().lower()
             if ans == "q":
                 break
             if ans == "b":
                 k = max(0, k - 1)
+                placed.pop(k, None)
                 continue
             if ans != "s":
                 magnet_on(b)
                 time.sleep(PULSE_S)
                 b.magnet(False)
+                placed[k] = (x, y)
             k += 1
-        b.move(*L.park())
+        paths.travel(b, cart, L.park(), list(placed.values()), L.xmax, L.ymax)
     print("Done. Now: py game.py, and press 'Learn colours' the first time.")
 
 
