@@ -73,6 +73,7 @@ class Game:
     def __init__(self, settings=None, log=print):
         self.s = dict(DEFAULTS, **(settings or {}))
         self.inbox = queue.Queue()
+        self.swap_colours = False   # the page's swap button (circles on the photo follow it)
         self.lock = threading.Lock()
         self.log_fn = log
         self.L = Layout.load()
@@ -96,6 +97,7 @@ class Game:
         self.warnings = []
         self.coach = None
         self.photo = None                  # jpeg bytes with what vision found
+        self.last_read = None              # (photo, reading) behind self.photo, redrawn on a colour swap
         self.last_img = None               # the last photo (of the board as it was known), for reading by change
         self.seen = None                   # the board the camera read last (the page can edit it)
         self.winner = None
@@ -114,7 +116,7 @@ class Game:
                     "has_photo": self.photo is not None, "photo_t": getattr(self, "photo_t", 0),
                     "pieces": self.pieces(), "labels": self.labels(), "seen": self.seen,
                     "bar_y": round(self.L._row_y(6), 1), "frame": self.frame(),
-                    "colours": getattr(self, "side_colours", None)}
+                    "colours": getattr(self, "side_colours", None), "swap": self.swap_colours}
 
     def frame(self):
         """Picture frame mm -> magnet mm (= the corrected photo's axes) as a 2x3 matrix, for the page."""
@@ -155,6 +157,10 @@ class Game:
     def post(self, action):
         """action: {'name': 'new' | 'done' | 'dice' | 'accept' | 'reread' | 'closest' |
         'move' | 'settings' | 'learn' | 'stop', ...}"""
+        if action.get("name") == "swap_colours":   # the page's swap button: the photo circles too
+            self.swap_colours = bool(action.get("value"))
+            self.redraw()
+            return
         if action.get("name") == "settings":
             with self.lock:
                 self.s.update({k: v for k, v in action.get("values", {}).items() if k in DEFAULTS})
@@ -231,17 +237,26 @@ class Game:
         self.c.check(img)   # calib.json made for another camera resolution: say so plainly
         return img
 
-    def look(self):
-        """Photo + vision. Keeps an annotated copy for the page."""
-        img = self.photo_img()
-        r = vision.read(img, self.c, self.L, self.model, self.s["vision"])
-        view = vision.draw(img, self.c, r)
+    def redraw(self):
+        """The page's photos: the last one with every checker found circled (robot green,
+        person orange; swapped when the page's swap button is on)."""
+        if not getattr(self, "last_read", None):
+            return
+        img, r = self.last_read
+        view = vision.draw(img, self.c, r, swap=self.swap_colours)
         import calib
         top = calib.view(view, self.c, xmax=self.L.xmax, ymax=self.L.ymax)[0]
         with self.lock:
             self.photo = cv2.imencode(".jpg", view)[1].tobytes()
             self.photo_top = cv2.imencode(".jpg", top)[1].tobytes()
             self.photo_t = time.time()
+
+    def look(self):
+        """Photo + vision. Keeps an annotated copy for the page."""
+        img = self.photo_img()
+        r = vision.read(img, self.c, self.L, self.model, self.s["vision"])
+        self.last_read = (img, r)
+        self.redraw()
         if self.logfile:
             # every photo is kept: its running number + the number of moves played when it was taken
             name = f"{self.shot_n:03d}_move{len(self.history):02d}.jpg"

@@ -27,9 +27,9 @@ PAGE = r"""<!doctype html>
 <title>AI-bg</title>
 <style>
 :root{--bg:#f4efe6;--card:#fffaf2;--ink:#2b2622;--mute:#7a6f64;--line:#d9cbb5;
- --robot:#2f5d9e;--human:#b0302a;--accent:#2f6f5e;--warn:#b5651d}
+ --robot:#00ff00;--human:#ffa500;--accent:#2f6f5e;--warn:#b5651d}
 @media (prefers-color-scheme:dark){:root{--bg:#1d1b19;--card:#27241f;--ink:#eee6da;--mute:#a3988a;
- --line:#4a4236;--robot:#5b8fd6;--human:#c8433b;--accent:#5bb39a;--warn:#e09a4f}}
+ --line:#4a4236;--robot:#00ff00;--human:#ffa500;--accent:#5bb39a;--warn:#e09a4f}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);
  font:15px/1.4 system-ui,-apple-system,Segoe UI,sans-serif}
 main{max-width:1180px;margin:0 auto;padding:16px;display:grid;gap:16px}
@@ -194,15 +194,20 @@ function drawBoard(s){const svg=document.getElementById("board");
 function ink(side){const c=getComputedStyle(document.documentElement).getPropertyValue("--"+side).trim();
  const m=/^#([0-9a-f]{6})$/i.exec(c);if(!m)return side==="robot"?"#000":"#fff";const n=parseInt(m[1],16);
  return (0.299*(n>>16)+0.587*((n>>8)&255)+0.114*(n&255))>150?"#000":"#fff"}
-const DEF={robot:"#2f5d9e",human:"#b0302a"};let SWAP=false;
+const DEF={robot:"#00ff00",human:"#ffa500"};let SWAP=false;
 try{SWAP=localStorage.getItem("swapSides")==="1"}catch(e){}
-function edText(v){const c=getComputedStyle(document.documentElement).getPropertyValue("--"+v).trim();
- return `click adds ${NAMEOF[c]||"a"} checker (${v==="robot"?"robot":"you"})`}
-const NAMEOF={"#f2f2ea":"white","#1c1c1c":"black","#2f5d9e":"blue","#b0302a":"red"};
+// Nadav 14.11: the board is drawn in the photo circles' colours (robot green, you orange);
+// the swap button swaps them here and on the photo. The real checker colour (black / white,
+// found at the opening) is only named on the chips.
+function realName(k){const c=S&&S.colours;return c?NAMEOF[c[k]]||"":""}
+function dotName(v){return (v==="robot")!==SWAP?"green":"orange"}
+function edText(v){return `click adds ${v==="robot"?"a robot":"your"} checker (${dotName(v)})`}
+const NAMEOF={"#f2f2ea":"white","#1c1c1c":"black"};
+let swapSent=null;
 function paintSides(c){const r=document.documentElement.style;
- if(!c&&!SWAP){r.removeProperty("--robot");r.removeProperty("--human")}
- else{const b=c||DEF;r.setProperty("--robot",b[SWAP?"human":"robot"]);r.setProperty("--human",b[SWAP?"robot":"human"])}
- const g=k=>NAMEOF[getComputedStyle(document.documentElement).getPropertyValue("--"+k).trim()]||"";
+ r.setProperty("--robot",DEF[SWAP?"human":"robot"]);r.setProperty("--human",DEF[SWAP?"robot":"human"]);
+ if(S&&S.swap!==SWAP&&swapSent!==SWAP){swapSent=SWAP;post({name:"swap_colours",value:SWAP})}
+ const g=k=>realName(k);
  document.getElementById("swr").textContent="Robot"+(g("robot")?": "+g("robot"):"");
  for(const v of ["robot","human"]){const o=document.querySelector(".ed-"+v);if(o)o.textContent=edText(v)}
  document.getElementById("swh").textContent="You"+(g("human")?": "+g("human"):"")}
