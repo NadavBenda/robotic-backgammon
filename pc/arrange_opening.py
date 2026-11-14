@@ -30,6 +30,16 @@ def order(L, board, frm):
     return [(where, i, xy, side) for (where, i), (xy, side) in items]
 
 
+def outer_first(L, xy):
+    """Which checker of a pile to lift first (smallest wins): in a bear-off tray the whole outer
+    row (next to the board edge) before the inner one, and in a row the one nearest the lane
+    (Nadav 14.11). The one exception: a checker standing right at the lane (the 15th of a tray
+    spills into the inner row beside it) goes first, or it blocks the lane for all the others."""
+    x, y = L.from_magnet(*xy)
+    d = abs(x - L.xmax / 2)
+    return (0 if d < 30 else 1, round(y / 10.0), d)
+
+
 def arrange(b, L, frm, to, log=print):
     """Drag every checker from the board `frm` (where they are, at their exact places) to
     the board `to`, in order(). Returns the executor (its warnings) and the number of drags."""
@@ -42,7 +52,7 @@ def arrange(b, L, frm, to, log=print):
         if not src:
             log(f"   no {side} checker left to put on {where}")
             continue
-        ex.move_checker(src[0], where, side, goal=tuple(xy))
+        ex.move_checker(src[0], where, side, goal=tuple(xy), pick=lambda xy_, L=L: outer_first(L, xy_))
         n += 1
     ex.park(L.park())
     for w in ex.warnings:

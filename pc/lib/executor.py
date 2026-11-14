@@ -125,13 +125,14 @@ class Executor:
                 return best[1]
         return None
 
-    def move_checker(self, frm_key, to_key, side=None, goal=None):
+    def move_checker(self, frm_key, to_key, side=None, goal=None, pick=None):
         lst = self.places.get(frm_key)
         if not lst:
             raise RuntimeError(f"no checker on {frm_key}")
         # the top checker: the one nearest the lane (a person may have shuffled the order)
         mid = self.L.xmax / 2
-        top = min(range(len(lst)), key=lambda i: abs(self.L.from_magnet(*lst[i])[0] - mid))
+        top = min(range(len(lst)), key=(lambda i: pick(lst[i])) if pick else
+                  (lambda i: abs(self.L.from_magnet(*lst[i])[0] - mid)))
         lst.append(lst.pop(top))
         start = tuple(lst[-1])
         if goal is None:

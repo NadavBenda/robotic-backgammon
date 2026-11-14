@@ -212,6 +212,17 @@ def test_arrange_opening_from_the_trays():
     assert n == 30 and b.bumps == 0 and placed(rules.OPENING), (n, b.bumps, ex.warnings)
 
 
+def test_arrange_takes_the_outer_tray_row_first():
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    import arrange_opening
+    L = Layout.load()
+    for w in ("off_robot", "off_human"):
+        pts = [L.slot(w, i) for i in range(14)]
+        order = sorted(range(14), key=lambda i: arrange_opening.outer_first(L, pts[i]))
+        assert sorted(order[:7]) == list(range(7)), (w, order)   # row 0 (outer) is emptied first
+
+
 if __name__ == "__main__":
     for k, f in list(globals().items()):
         if k.startswith("test_"):
