@@ -36,6 +36,33 @@ GRAB_S = 0.3      # s after the magnet turns on
 ROUND_MM = 10.0   # a sharp corner is cut by one short line from this far before it to this far after
 ROUND_N = 0       # extra points between those two (0 = a plain cut; each point is a brief stop)
 ROUND_MIN_DEG = 30.0  # corners that turn less than this are left alone
+DRAG_V, DRAG_A = 180.0, 600.0   # mm/s, mm/s2 with a checker (Nadav 14.11: softer than 800, checkers fell at corners)
+CORNER_S = (0.1, 0.3)  # s the magnet waits on at a corner while dragging, slight -> sharp turn (Nadav 14.11),
+CORNER_DEG = (30.0, 120.0)  # so the lagging checker catches up before the cart sets off the new way
+
+
+def corner_wait(deg):
+    """Seconds to wait at a corner that turns deg degrees (0.1 s up to 30 deg, 0.3 s from 120)."""
+    (a, b), (d0, d1) = CORNER_S, CORNER_DEG
+    return a + (b - a) * float(np.clip((deg - d0) / (d1 - d0), 0, 1))
+
+
+def _turn_deg(a, p, b):
+    u, v = np.subtract(p, a), np.subtract(b, p)
+    nu, nv = np.hypot(*u), np.hypot(*v)
+    if nu < 1e-9 or nv < 1e-9:
+        return 0.0
+    return float(np.degrees(np.arccos(np.clip(np.dot(u, v) / (nu * nv), -1, 1))))
+
+
+def drag_seconds(path, grab_s=GRAB_S, settle_s=SETTLE_S, v=DRAG_V, a=DRAG_A):
+    """How long the magnet stays on for this drag (for the heat budget)."""
+    t = grab_s + settle_s + 0.5            # + the board's release wait
+    for p, q in zip(path, path[1:]):
+        L = float(np.hypot(q[0] - p[0], q[1] - p[1]))
+        t += L / v + v / a if L > v * v / a else 2 * np.sqrt(L / a)
+    t += sum(corner_wait(_turn_deg(*path[i - 1:i + 2])) for i in range(1, len(path) - 1))
+    return t + 2 * np.sqrt(OVERSHOOT / a) * 2
 
 
 class NoPath(RuntimeError):
@@ -79,10 +106,11 @@ def clearance(path, others):
     return float(min(np.min(_seg_dist(o, a, b)) for a, b in zip(path, path[1:])))
 
 
-def _fewest_lines(chain, others, need, clear, soft_mm, seg_mm):
+def _fewest_lines(chain, others, need, clear, soft_mm, seg_mm, corner_mm=0.0):
     """The corners to keep out of an A* chain: the cheapest way through its points, where a
     line costs its length (more next to checkers, as in the A*) + seg_mm for being one more
-    line (Nadav 13.11: a sharp corner costs the same as any other). A line may skip points only when it keeps the hard distance to every checker."""
+    line, + corner_mm per second the magnet waits at the corner (corner_wait: more for a
+sharper turn, Nadav 14.11; 0 for magnet-off moves). A line may skip points only when it keeps the hard distance to every checker."""
     P = np.asarray(chain, float)
     n = len(P)
     if n <= 2:
@@ -114,7 +142,11 @@ def _fewest_lines(chain, others, need, clear, soft_mm, seg_mm):
         dout = P[j + 1:] - P[j]
         din = din / np.maximum(np.hypot(din[:, 0], din[:, 1]), 1e-9)[:, None]
         dout = dout / np.maximum(np.hypot(dout[:, 0], dout[:, 1]), 1e-9)[:, None]
-        cand = best[:j, j][:, None] + 0.0 * (din @ dout.T)       # (incoming, outgoing); no extra for sharp corners
+        cand = best[:j, j][:, None]                                # (incoming, outgoing)
+        if corner_mm:
+            deg = np.degrees(np.arccos(np.clip(din @ dout.T, -1, 1)))
+            (a, b), (d0, d1) = CORNER_S, CORNER_DEG
+            cand = cand + corner_mm * (a + (b - a) * np.clip((deg - d0) / (d1 - d0), 0, 1))
         k = np.argmin(cand, axis=0)
         best[j, j + 1:] = cand[k, np.arange(cand.shape[1])] + C[j, j + 1:]
         back[j, j + 1:] = k
@@ -127,7 +159,7 @@ def _fewest_lines(chain, others, need, clear, soft_mm, seg_mm):
     return [chain[k] for k in out[::-1]]
 
 
-def plan(start, goal, others=(), xmax=XMAX, ymax=YMAX, clear=CLEAR, soft_mm=SOFT, seg_mm=SEG_MM):
+def plan(start, goal, others=(), xmax=XMAX, ymax=YMAX, clear=CLEAR, soft_mm=SOFT, seg_mm=SEG_MM, drag=True):
     """Corners of a path from start to goal (mm), first = start, last = goal.
     seg_mm: what one more line costs (as mm), so a slightly longer path with fewer stops wins.
     Raises NoPath when the checkers block every way (move one of them first)."""
@@ -205,7 +237,7 @@ def plan(start, goal, others=(), xmax=XMAX, ymax=YMAX, clear=CLEAR, soft_mm=SOFT
     chain = chain[::-1]
     # cut corners: the cheapest set of straight lines through the A* points, each line paying
     # its length (more next to checkers) + seg_mm for the stop it adds
-    out = _fewest_lines(chain, others, need, clear, soft_mm, seg_mm)
+    out = _fewest_lines(chain, others, need, clear, soft_mm, seg_mm, DRAG_V if drag else 0.0)
     return round_corners([(float(p[0]), float(p[1])) for p in out], others, need)
 
 
@@ -229,7 +261,7 @@ def travel(b, frm, to, others=(), xmax=XMAX, ymax=YMAX):
     path = [tuple(f), tuple(t)]
     for clear in FREE_CLEARS:
         try:
-            path = plan(f, t, o, xmax, ymax, clear=clear, soft_mm=max(FREE_SOFT, clear))
+            path = plan(f, t, o, xmax, ymax, clear=clear, soft_mm=max(FREE_SOFT, clear), drag=False)
             break
         except NoPath:
             continue
@@ -271,16 +303,19 @@ def length(path):
     return float(sum(np.hypot(b[0] - a[0], b[1] - a[1]) for a, b in zip(path, path[1:])))
 
 
-def drag(b, path, overshoot=OVERSHOOT, grab_s=GRAB_S, xmax=XMAX, ymax=YMAX, settle_s=SETTLE_S):
+def drag(b, path, overshoot=OVERSHOOT, grab_s=GRAB_S, xmax=XMAX, ymax=YMAX, settle_s=SETTLE_S, corners=True):
     """Drive the magnet along a planned path with the checker on it. At the end: on past the
     target by `overshoot` mm (pulls the lagging checker up), back onto the target, wait
-    `settle_s` with the magnet on so the checker centres over it, then let go."""
-    from helpers import magnet_on  # waits if the magnet is hot
+    `settle_s` with the magnet on so the checker centres over it, then let go. At each corner
+    the magnet waits corner_wait(turn) so the lagging checker catches up (corners=False: no wait)."""
+    from helpers import magnet_on  # waits if the heat budget can't cover this drag
     b.move(*path[0])
-    magnet_on(b)
+    magnet_on(b, need_s=drag_seconds(path, grab_s, settle_s) + 2.0)
     time.sleep(grab_s)
-    for p in path[1:-1]:
+    for i, p in enumerate(path[1:-1], 1):
         b.move(*p)
+        if corners:
+            time.sleep(corner_wait(_turn_deg(path[i - 1], p, path[i + 1])))
     a, z = np.asarray(path[-2], float), np.asarray(path[-1], float)
     d = z - a
     n = float(np.hypot(*d))
