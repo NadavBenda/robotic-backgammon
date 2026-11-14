@@ -108,7 +108,13 @@ class Game:
                     "off": [own_off, opp_off], "pips": rules.pips(self.board), "winner": self.winner,
                     "has_photo": self.photo is not None, "photo_t": getattr(self, "photo_t", 0),
                     "pieces": self.pieces(), "labels": self.labels(), "seen": self.seen,
-                    "bar_y": round(self.L._row_y(6), 1)}
+                    "bar_y": round(self.L._row_y(6), 1), "frame": self.frame()}
+
+    def frame(self):
+        """Picture frame mm -> magnet mm (= the corrected photo's axes) as a 2x3 matrix, for the page."""
+        o, ex, ey = (np.subtract(self.L.to_magnet(*p), 0) for p in ((0, 0), (1, 0), (0, 1)))
+        return [[round(ex[0] - o[0], 6), round(ey[0] - o[0], 6), round(o[0], 3)],
+                [round(ex[1] - o[1], 6), round(ey[1] - o[1], 6), round(o[1], 3)]]
 
     def pieces(self):
         """Checkers in the picture frame (x right, y from the near side), for the page."""

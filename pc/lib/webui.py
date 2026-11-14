@@ -43,8 +43,10 @@ button,select,input{font:inherit;border-radius:8px;border:1px solid var(--line);
 button{cursor:pointer;background:var(--accent);color:#fff;border:0;font-weight:600}
 button.sec{background:transparent;color:var(--ink);border:1px solid var(--line)}
 #asks{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-.dice{display:inline-flex;gap:6px;margin-left:8px}.die{width:34px;height:34px;border-radius:7px;
- background:#fff;color:#222;display:grid;place-items:center;font-weight:700;border:1px solid #bbb}
+.dice{display:inline-flex;gap:8px;margin-left:10px;vertical-align:middle}.die{display:inline-block;width:38px;height:38px}
+.die.rolling{animation:tumble .35s linear infinite}
+@keyframes tumble{0%{transform:rotate(0) translateY(0)}25%{transform:rotate(90deg) translateY(-6px)}
+ 50%{transform:rotate(180deg) translateY(0)}75%{transform:rotate(270deg) translateY(-4px)}100%{transform:rotate(360deg)}}
 svg{width:100%;height:auto;display:block}
 .warn{color:var(--warn);font-size:13px}
 table{width:100%;border-collapse:collapse;font-size:13px}td{padding:3px 4px;border-bottom:1px solid var(--line)}
@@ -59,8 +61,8 @@ table{width:100%;border-collapse:collapse;font-size:13px}td{padding:3px 4px;bord
   <div class="stats"><b id="turn"></b><span id="pips"></span><span id="offs"></span></div>
   <div id="coach" class="mute"></div>
   <div id="warns"></div>
-  <svg id="board" viewBox="-34 -20 478 490"></svg>
-  <div class="mute">Seen from above, near side (bear-off) at the bottom. Numbers are your points.
+  <svg id="board" viewBox="-22 -22 454 464"></svg>
+  <div class="mute">Drawn the same way round as the camera's top view next to it. Numbers are your columns.
   White = robot, red = you.</div>
 </section>
 <section style="display:grid;gap:16px;align-content:start">
@@ -81,9 +83,26 @@ const NAMES={mode:"Mode",engine:"Engine",dice:"Dice",human_move:"Your move",visi
 const BTN={new:"New game",done:"Done",accept:"Accept",reread:"Read again",closest:"Take closest legal move",
  learn:"Learn colours",arrange:"Robot arranges the board",rolled:"Rolled"};
 let S=null, built=false, lastPhoto=0, ED=null, EDC="robot";
-// -- editing what the camera read: click a point to add a checker of the chosen colour --
+// -- the board is drawn as the corrected camera photo shows it: frame mm (x, y from the near side)
+// -> magnet mm (x right, y down) through the layout's own map (s.frame), 1 unit = 1 mm --
+function P(x,y){const A=S.frame;return [A[0][0]*x+A[0][1]*y+A[0][2],A[1][0]*x+A[1][1]*y+A[1][2]]}
+function Q(x,y){const [a,b]=P(x,y);return `${a.toFixed(1)},${b.toFixed(1)}`}
+function toFrame(mx,my){const A=S.frame,d=A[0][0]*A[1][1]-A[0][1]*A[1][0],u=mx-A[0][2],v=my-A[1][2];
+ return [(A[1][1]*u-A[0][1]*v)/d,(-A[1][0]*u+A[0][0]*v)/d]}
+function txt(x,y,t,size,fill,bold){const [a,b]=P(x,y);
+ return `<text x="${a}" y="${b+size*0.35}" font-size="${size}" ${bold?'font-weight="bold"':''} text-anchor="middle" fill="${fill}">${t}</text>`}
+function disc(x,y,side){const [a,b]=P(x,y);return `<circle cx="${a}" cy="${b}" r="12.5" fill="var(--${side})" stroke="#0008" stroke-width="1.2"/>`}
+function base(s,edit){let h=`<rect x="-20" y="-20" width="450" height="460" rx="10" fill="var(--card)" stroke="${edit?'#e0a000':'var(--line)'}" stroke-width="${edit?4:1}"/>`;
+ if(edit)h+=`<rect x="-20" y="-20" width="450" height="460" rx="10" fill="#e0a000" opacity=".10"/>`;
+ const by=s.bar_y;h+=`<polygon points="${Q(0,by-13)} ${Q(410,by-13)} ${Q(410,by+13)} ${Q(0,by+13)}" fill="var(--line)" opacity=".35"/>`;
+ for(const [x,y,n] of s.labels){const left=x<205;
+  const pts=left?`${Q(x-13,y+13)} ${Q(x-13,y-13)} ${Q(x+150,y)}`:`${Q(x+13,y+13)} ${Q(x+13,y-13)} ${Q(x-150,y)}`;
+  h+=`<polygon points="${pts}" fill="${n%2?'#c9a77c':'#8f6a43'}" opacity=".45"/>`;
+  h+=txt(left?x+162:x-162,y,n,11,"var(--mute)")}
+ return h}
 function edPlace(ev){if(!ED)return;const svg=document.getElementById("board");const pt=svg.createSVGPoint();
- pt.x=ev.clientX;pt.y=ev.clientY;const q=pt.matrixTransform(svg.getScreenCTM().inverse());const H=430,y=H-q.y,left=q.x<205;
+ pt.x=ev.clientX;pt.y=ev.clientY;const q=pt.matrixTransform(svg.getScreenCTM().inverse());
+ const [fx,y]=toFrame(q.x,q.y),left=fx<205;
  let best=null;for(const [x,ly,n] of S.labels){if((x<205)!==left)continue;const d=Math.abs(ly-y);if(!best||d<best[0])best=[d,25-n]}
  if(Math.abs(S.bar_y-y)<(best?best[0]:1e9))best=[0,left?0:25];
  if(!best)return;const p=best[1],sign=EDC==="robot"?1:-1;
@@ -93,26 +112,34 @@ function edPlace(ev){if(!ED)return;const svg=document.getElementById("board");co
  else if(ED[p]*sign<0)ED[p]=sign;else ED[p]+=sign;
  drawEdit(S)}
 function offOf(b){let r=0,h=0;for(const v of b){if(v>0)r+=v;else h-=v}return [15-r,15-h]}
-function stack(x,y,dir,v,side,H){// checkers side by side from the edge toward the middle, like a real board
+function stack(x,y,dir,v,side){// checkers side by side from the edge toward the middle, like a real board
  const n=Math.abs(v);if(!n)return "";const step=n>1?Math.min(26,138/(n-1)):0;let h="";
- for(let i=0;i<n;i++)h+=`<circle cx="${x+dir*i*step}" cy="${H-y}" r="12.5" fill="var(--${side})" stroke="#0008" stroke-width="1.2"/>`;
- if(n>6)h+=`<text x="${x+dir*(n-1)*step}" y="${H-y+5}" font-size="13" font-weight="bold" text-anchor="middle" fill="${side==='robot'?'#000':'#fff'}">${n}</text>`;
+ for(let i=0;i<n;i++)h+=disc(x+dir*i*step,y,side);
+ if(n>6)h+=txt(x+dir*(n-1)*step,y,n,13,side==='robot'?'#000':'#fff',true);
  return h}
-function drawEdit(s){const svg=document.getElementById("board");const H=430;
- let h=`<rect x="-32" y="-16" width="474" height="482" rx="10" fill="var(--card)" stroke="#e0a000" stroke-width="4"/>`;
- h+=`<rect x="-32" y="-16" width="474" height="482" rx="10" fill="#e0a000" opacity=".10"/>`;
- h+=`<rect x="150" y="-10" width="110" height="${H-60}" fill="var(--line)" opacity=".25"/>`;
- h+=`<text x="205" y="${H-236+4}" font-size="13" font-weight="bold" text-anchor="middle" fill="#c08000">EDITING</text>`;
- for(const [x,y,n] of s.labels){const left=x<205;
-  const pts=left?`${x-13},${H-y-13} ${x-13},${H-y+13} ${x+150},${H-y}`:`${x+13},${H-y-13} ${x+13},${H-y+13} ${x-150},${H-y}`;
-  h+=`<polygon points="${pts}" fill="${n%2?'#c9a77c':'#8f6a43'}" opacity=".45"/>`;
-  h+=`<text x="${left?-22:432}" y="${H-y+4}" font-size="11" text-anchor="middle" fill="var(--mute)">${n}</text>`;
-  const v=ED[25-n];if(v)h+=stack(x,y,left?1:-1,v,v>0?"robot":"human",H)}
- const bx=[[60,ED[0],"robot",1],[350,-ED[25],"human",-1]];
- for(const [x,v,side,dir] of bx){h+=`<text x="${x}" y="${H-s.bar_y+4}" font-size="11" text-anchor="middle" fill="var(--mute)">bar</text>`;
-  if(v)h+=stack(x+30*dir,s.bar_y,dir,v,side,H)}
- const o=offOf(ED);h+=`<text x="205" y="${H-31-4}" font-size="12" text-anchor="middle" fill="var(--mute)">off: robot ${o[0]} · you ${o[1]}</text>`;
+function drawEdit(s){const svg=document.getElementById("board");
+ let h=base(s,true)+txt(205,s.labels[11][1],"EDITING",13,"#c08000",true);
+ for(const [x,y,n] of s.labels){const v=ED[25-n];if(v)h+=stack(x,y,x<205?1:-1,v,v>0?"robot":"human")}
+ for(const [x,v,side,dir] of [[60,ED[0],"robot",1],[350,-ED[25],"human",-1]]){h+=txt(x,s.bar_y,"bar",11,"var(--mute)");
+  if(v)h+=stack(x+30*dir,s.bar_y,dir,v,side)}
+ const o=offOf(ED);h+=txt(205,35,`off: robot ${o[0]} · you ${o[1]}`,12,"var(--mute)");
  svg.innerHTML=h}
+// -- dice: pips, a short tumble and a rattle when new dice appear --
+const PIPS={1:[[2,2]],2:[[1,1],[3,3]],3:[[1,1],[2,2],[3,3]],4:[[1,1],[3,1],[1,3],[3,3]],
+ 5:[[1,1],[3,1],[2,2],[1,3],[3,3]],6:[[1,1],[3,1],[1,2],[3,2],[1,3],[3,3]]};
+function face(v){return `<svg viewBox="0 0 40 40" width="38" height="38"><rect x="1" y="1" width="38" height="38" rx="8" fill="#fff" stroke="#999"/>`+
+ (PIPS[v]||[]).map(([i,j])=>`<circle cx="${i*10}" cy="${j*10}" r="3.6" fill="#222"/>`).join("")+`</svg>`}
+let lastDice, rollEnd=0, AC=null;
+function rolling(){return Date.now()<rollEnd}
+function rattle(){try{AC=AC||new (window.AudioContext||window.webkitAudioContext)();const t0=AC.currentTime;
+ for(let k=0;k<7;k++){const t=t0+k*0.07+Math.random()*0.03,n=AC.createBufferSource(),b=AC.createBuffer(1,AC.sampleRate*0.03,AC.sampleRate),
+  d=b.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,3);
+  const f=AC.createBiquadFilter();f.type="bandpass";f.frequency.value=1800+Math.random()*1800;f.Q.value=2;
+  const g=AC.createGain();g.gain.value=0.5*(1-k/9);n.buffer=b;n.connect(f).connect(g).connect(AC.destination);n.start(t)}}catch(e){}}
+function roll(){rollEnd=Date.now()+700;rattle();const t=setInterval(()=>{const ds=document.querySelectorAll(".die");
+ for(const e of ds){if(rolling())e.innerHTML=face(1+Math.floor(Math.random()*6));else{e.innerHTML=face(+e.dataset.v);e.classList.remove("rolling")}}
+ if(!rolling())clearInterval(t)},80)}
+document.addEventListener("pointerdown",()=>{try{AC=AC||new (window.AudioContext||window.webkitAudioContext)();AC.resume()}catch(e){}},{once:true});
 function post(a){return fetch("/action",{method:"POST",body:JSON.stringify(a)})}
 function el(t,attrs={},kids=[]){const e=document.createElement(t);for(const k in attrs){
  if(k=="text")e.textContent=attrs[k];else if(k.startsWith("on"))e[k]=attrs[k];else e.setAttribute(k,attrs[k])}
@@ -123,21 +150,16 @@ function buildSettings(s){const g=document.getElementById("settings");g.innerHTM
   for(const o of OPTS[k]){const op=el("option",{value:String(o),text:String(o).replaceAll("_"," ")});
    if(String(s[k])===String(o))op.selected=true;sel.append(op)}
   g.append(el("label",{text:NAMES[k]}),sel)}}
-function drawBoard(s){const svg=document.getElementById("board");const H=430;
- let h=`<rect x="-32" y="-16" width="474" height="482" rx="10" fill="var(--card)" stroke="var(--line)"/>`;
- h+=`<rect x="150" y="-10" width="110" height="${H-60}" fill="var(--line)" opacity=".25"/>`;
- h+=`<text x="205" y="${H-236+4}" font-size="12" text-anchor="middle" fill="var(--mute)">BAR</text>`;
- for(const [x,y,n] of s.labels){const left=x<205, X=left?x-14:x+14;
-  const pts=left?`${x-13},${H-y-13} ${x-13},${H-y+13} ${x+150},${H-y}`:`${x+13},${H-y-13} ${x+13},${H-y+13} ${x-150},${H-y}`;
-  h+=`<polygon points="${pts}" fill="${n%2?'#c9a77c':'#8f6a43'}" opacity=".45"/>`;
-  h+=`<text x="${left?-22:432}" y="${H-y+4}" font-size="11" text-anchor="middle" fill="var(--mute)">${n}</text>`}
- h+=`<text x="205" y="${H-31-4}" font-size="11" text-anchor="middle" fill="var(--mute)">bear-off</text>`;
- for(const [x,y,side] of s.pieces){h+=`<circle cx="${x}" cy="${H-y}" r="12.5" fill="var(--${side})" stroke="#0006" stroke-width="1.2"/>`}
+function drawBoard(s){const svg=document.getElementById("board");
+ let h=base(s,false)+txt(205,s.bar_y,"BAR",12,"var(--mute)")+txt(205,35,"bear-off",11,"var(--mute)");
+ for(const [x,y,side] of s.pieces)h+=disc(x,y,side);
  svg.innerHTML=h}
 function render(s){S=s;if(!built){buildSettings(s.settings);built=true}
  document.getElementById("sim").textContent=s.sim?"(simulator)":"";
  const p=document.getElementById("prompt");p.textContent=s.prompt;
- if(s.dice){const d=el("span",{class:"dice"});for(const v of s.dice)d.append(el("span",{class:"die",text:v}));p.append(d)}
+ const dk=JSON.stringify(s.dice||null);if(dk!==lastDice){if(lastDice!==undefined&&s.dice)roll();lastDice=dk}
+ if(s.dice){const d=el("span",{class:"dice"});for(const v of s.dice){const e=el("span",{class:"die"+(rolling()?" rolling":"")});
+  e.dataset.v=v;e.innerHTML=face(rolling()?1+Math.floor(Math.random()*6):v);d.append(e)}p.append(d)}
  const a=document.getElementById("asks");const keep=document.activeElement&&a.contains(document.activeElement);
  if(!keep||a.dataset.k!==JSON.stringify(s.asks)+s.legal.length){a.innerHTML="";a.dataset.k=JSON.stringify(s.asks)+s.legal.length;
   for(const k of s.asks){
