@@ -205,7 +205,7 @@ def main():
     from layout import Layout
     L = Layout.load()
     k = input("Compare all the methods on photos they did not learn from (slow: an hour or more)?\n"
-              "y = yes   Enter = no, just train the networks on all the photos (a few minutes): ").strip().lower()
+              "y = yes   Enter = no, just train the features network (learned) on all the photos: ").strip().lower()
     if k == "y":
         report(calib.load(), L)
     else:
@@ -213,7 +213,7 @@ def main():
 
 
 def quick(c, L):
-    """Train the networks once on all the photos and save them (no comparison). The
+    """Train the features network (learned) once on all the photos and save it (no comparison). The
     comparison is for choosing a method; once chosen, this is all a new batch of photos needs."""
     import time
     t0 = time.time()
@@ -233,11 +233,7 @@ def quick(c, L):
     det.save(photos=len(allp), runs=len(runs), weak=old.get("weak"),
              learned_wrong=old.get("learned_wrong"), norm_wrong=old.get("norm_wrong"), cnn_wrong=old.get("cnn_wrong"))
     print(f"   saved detector.json (stopped after {det.presence.stopped_at} steps)")
-    if USE_CNN:
-        print("Training the pixel network (stops by itself when it stops improving)...")
-        cd = cnn.Detector.train(cnn_samples(allp, L), log=print)
-        cd.save()
-        print(f"   saved detector_cnn.pt ({cd.epochs} epochs)")
+    # Nadav 14.11: the game reads with learned only; the pixel network is no longer trained here
     print(f"Done in {(time.time() - t0) / 60:.0f} min. The game uses them from the next start.")
 
 
