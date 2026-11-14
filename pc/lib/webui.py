@@ -37,6 +37,7 @@ main{max-width:1180px;margin:0 auto;padding:16px;display:grid;gap:16px}
 @media (max-width:820px){.pair{grid-template-columns:1fr}}
 .pic{position:relative;width:100%;aspect-ratio:450/460;border-radius:8px;overflow:hidden;background:var(--bg);margin-top:8px}
 .pic svg,.pic img{position:absolute;inset:0;width:100%;height:100%;display:block;object-fit:fill;margin:0}
+#photo,#top{transform:scaleY(-1)}  /* photos upside down too, like the drawing (FLIP, Nadav 14.11) */
 button.big{font-size:22px;padding:14px 44px;border-radius:12px}
 #edask{position:fixed;z-index:9;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px;box-shadow:0 4px 14px #0004;display:flex;flex-direction:column;gap:6px;font-size:13px}
 button.small{font-size:12px;padding:3px 10px;opacity:.75}
@@ -79,7 +80,7 @@ table{width:100%;border-collapse:collapse;font-size:13px}td{padding:3px 4px;bord
 <section class="pair">
  <div class="card"><h1>The game</h1>
   <div class="pic"><svg id="board" viewBox="-20 -20 450 460" preserveAspectRatio="none"></svg></div>
-  <div class="mute" style="margin-top:6px">Upside down compared with the camera's view next to it. Numbers are the columns.</div></div>
+  <div class="mute" style="margin-top:6px">Same way round as the camera's view next to it (both shown upside down). Numbers are the columns.</div></div>
  <div class="card"><h1>What the camera sees</h1>
   <div class="pic"><img id="photo" alt="top view" style="display:none"></div>
   <div class="mute" style="margin-top:6px">The board from above, circles = checkers found.</div></div>
