@@ -13,6 +13,21 @@ def test_scripts_import():
         spec.loader.exec_module(importlib.util.module_from_spec(spec))
 
 
+def test_detector_saves_and_loads(tmp_path=None):
+    """detector.json written by training must load again (game, collect, arrange_opening use it)."""
+    import tempfile
+    import numpy as np
+    import learned
+    m = learned.MLP(5, hidden=3)
+    m.mu, m.sd = np.zeros(5), np.ones(5)
+    p = Path(tempfile.mkdtemp()) / "d.json"
+    learned.Detector(m, m).save(p)
+    d = learned.Detector.load(p)
+    x = np.random.default_rng(0).normal(size=(4, 5))
+    assert np.allclose(d.presence.prob(x), m.prob(x))
+
+
 if __name__ == "__main__":
     test_scripts_import()
+    test_detector_saves_and_loads()
     print("ok test_scripts_import")
