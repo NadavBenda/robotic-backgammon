@@ -14,7 +14,7 @@
  *   C              capture: "IMG <n>" line, then exactly n JPEG bytes, then DONE   ERR CAM
  *   CH             the same once at full sensor size QXGA 2048x1536 (~1 s), then back to UXGA
  *                  (allowed with the magnet on, but warns "! CAPTURE_WITH_MAG_ON")
- *   P <v> <a>      drag profile (magnet on): top speed mm/s, accel mm/s^2, default 180 / 800
+ *   P <v> <a>      drag profile (magnet on): top speed mm/s, accel mm/s^2, default 180 / 600
  *   F <v> <a>      free profile (magnet off), default 150 / 1200; starts at 40 mm/s so the
  *                  carriage leaves a checker sharply; the first move after M 0 starts at 50 mm/s
  *                  and speeds up at 3000 mm/s^2 (~3 mm) to tear away from the checker.
@@ -93,9 +93,9 @@ float freeMaxSteps   = 150.0 * STEPS_PER_MM;   // 150 מ"מ/ש'
 float freeAccelSteps = 1200.0 * STEPS_PER_MM;  // 1200 מ"מ/ש²
 // פרופיל גרירה כשהא"מ דולק: איטי ועדין יותר כדי שהאבן לא תישאר מאחור (משתנה בפקודה P)
 float dragMaxSteps   = 180.0 * STEPS_PER_MM;  // 180 מ"מ/ש' (drag_test 12.11, Vref 0.86: 200 עבר, 250 חורק/נכשל)
-float dragAccelSteps = 800.0 * STEPS_PER_MM;  // 800 מ"מ/ש²
+float dragAccelSteps = 600.0 * STEPS_PER_MM;  // 600 מ"מ/ש² (14.11: ב-800 אבנים נשמטו בפינות)
 
-Magnet mag(MAG_PIN, 40000);  // מקסימום 40 ש' ברצף, תקציב חום 60 ש'
+Magnet mag(MAG_PIN, 40000, 90000);  // מקסימום 40 ש' ברצף, תקציב חום 90 ש' (נדב 14.11: פי 1.5, המגנט כמעט לא התחמם)
 
 long currentXSteps = 0;
 long currentYSteps = 0;
@@ -412,9 +412,9 @@ void execute(String cmd) {
       reply(nullptr);
       break;
     case '?':
-      Serial.printf("POS %.1f %.1f HOMED %d MAG %d HEAT %d CAM %d DRAG_V %d DRAG_A %d FREE_V %d FREE_A %d\n",
+      Serial.printf("POS %.1f %.1f HOMED %d MAG %d HEAT %d BUDGET %d CAM %d DRAG_V %d DRAG_A %d FREE_V %d FREE_A %d\n",
                     currentXSteps / STEPS_PER_MM, currentYSteps / STEPS_PER_MM,
-                    homed, mag.isOn(), mag.heatPercent(), camReady,
+                    homed, mag.isOn(), mag.heatPercent(), (int)(mag.budgetMs() / 1000), camReady,
                     (int)lround(dragMaxSteps / STEPS_PER_MM), (int)lround(dragAccelSteps / STEPS_PER_MM),
                     (int)lround(freeMaxSteps / STEPS_PER_MM), (int)lround(freeAccelSteps / STEPS_PER_MM));
       reply(nullptr);

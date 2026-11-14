@@ -114,23 +114,20 @@ def step_aside(x, y, args):
     return ax, ay
 
 
-HOT = 60   # % of the magnet's heat budget (60 s on, board.ino). Above it a long drag can run out of
-           # budget halfway and the board cuts the magnet mid-drag (! MAG_TIMEOUT, checker dropped).
-
-
-def magnet_on(b):
+def magnet_on(b, need_s=0.0):
+    """Magnet on. First, when what is left of the board's heat budget can't cover need_s
+    seconds (the drag about to happen), wait until it can: otherwise the board cuts the
+    magnet halfway (! MAG_TIMEOUT) and the checker is dropped."""
     try:
-        heat = b.status().get("HEAT", 0)
+        st = b.status()
+        heat, budget = st.get("HEAT", 0), st.get("BUDGET", 60)
+        left = (100 - heat) / 100.0 * budget
+        if left < need_s:
+            wait = (need_s - left) * 2.0 + 1     # it cools at half the rate it heats
+            print(f"   magnet warm ({heat}%), cooling {wait:.0f} s before the next drag...")
+            time.sleep(wait)
     except Exception:
-        heat = 0
-    if heat > HOT:
-        print(f"   magnet warm ({heat}%), cooling down before the next drag...")
-        while heat > HOT - 20:
-            time.sleep(5)
-            try:
-                heat = b.status().get("HEAT", 0)
-            except Exception:
-                break
+        pass
     while True:
         try:
             b.magnet(True)

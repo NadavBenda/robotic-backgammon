@@ -25,7 +25,8 @@ import numpy as np
 import paths
 from gnubg import BAR, OFF
 
-DRAG = (180, 800)      # mm/s, mm/s2 with a checker; drag_test 12.11 at Vref 0.86: 250/800 failed, 200/800 held; 180 for margin
+DRAG = (paths.DRAG_V, paths.DRAG_A)   # mm/s, mm/s2 with a checker; drag_test 12.11 at Vref 0.86: 250/800 failed,
+                                      # 200/800 held; 180 for margin; accel 600 since 14.11 (checkers fell at corners)
 ROUTES = ("astar", "tight", "lane", "straight")
 
 
@@ -140,7 +141,8 @@ class Executor:
         self.log(f"   {frm_key} -> {to_key}: {len(path) - 1} line(s), {paths.length(path):.0f} mm ({how})")
         self.goto(start, others)
         paths.drag(self.b, path, overshoot=self._overshoot(path, others), grab_s=self.grab_s,
-                   xmax=self.L.xmax, ymax=self.L.ymax, settle_s=self.settle_s)
+                   xmax=self.L.xmax, ymax=self.L.ymax, settle_s=self.settle_s,
+                   corners=bool(self.grab_s))
         self.dragged_mm += paths.length(path)
         self.cart = tuple(goal)
         lst.pop()
@@ -300,7 +302,8 @@ class Executor:
             path, how = self.plan(tuple(c[:2]), tuple(t), others)
             self.goto(tuple(c[:2]), others)
             paths.drag(self.b, path, overshoot=self._overshoot(path, others), grab_s=self.grab_s,
-                       xmax=self.L.xmax, ymax=self.L.ymax, settle_s=self.settle_s)
+                       xmax=self.L.xmax, ymax=self.L.ymax, settle_s=self.settle_s,
+                   corners=bool(self.grab_s))
             c[0], c[1] = t
             self.cart = tuple(t)
             moves += 1

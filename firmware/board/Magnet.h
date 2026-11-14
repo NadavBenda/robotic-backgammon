@@ -68,6 +68,7 @@ class Magnet {
   }
 
   bool isOn() const { return isOn_; }
+  uint32_t budgetMs() const { return heatBudgetMs_; }
 
   // כמה אחוז מתקציב החום נוצל (0–100)
   int heatPercent() {
