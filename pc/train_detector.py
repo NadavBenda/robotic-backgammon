@@ -66,11 +66,21 @@ def mistakes(a, b):
     return out
 
 
-def load_runs(c, L, log=print):
+def own_calib(folder):
+    """The calibration saved with a run by collect.py, or None (then the current one is used)."""
+    import calib
+    try:
+        return calib.load(folder / "calib.json")
+    except (OSError, ValueError, KeyError):
+        return None
+
+
+def load_runs(c0, L, log=print):
     """[{name, photos: [(img, board, F, F_no_empty, y)]}] every run in dataset/."""
     runs = []
     for lab in sorted(DATA.glob("*/labels.jsonl")):
         folder = lab.parent
+        c = own_calib(folder) or c0
         e = folder / "empty_0.jpg"
         empty = imread(e) if e.exists() else None
         ecrop = cnn.crops(empty, c, L).astype(np.float16) if USE_CNN and empty is not None else None

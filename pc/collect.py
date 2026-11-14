@@ -671,6 +671,11 @@ def main():
     moves = ask_int("How many moves this run? Enter = 10 (a short first try): ", 10)
     folder = DATA / f"{datetime.now():%Y%m%d-%H%M%S}"
     log = run_log(folder)
+    try:      # the calibration of this run, so a later recalibration does not spoil these photos
+        import shutil
+        shutil.copyfile(calib.PATH, folder / "calib.json")
+    except OSError:
+        pass
     col = None
     try:
         with Board() as b:
