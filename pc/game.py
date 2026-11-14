@@ -57,7 +57,7 @@ DEFAULTS = {
     "human_move": "done_button",  # done_button | auto | robot_moves
     "vision": "learned",         # learned (detector.json from train_detector.py; decided 14.11) | norm | cnn | both | scan | slots | hough
     "coach": False,              # watch / human turns: show gnubg's choice
-    "first": "roll",             # roll (opening roll) | robot | human
+    "first": "human",            # human (always, Nadav 14.11) | robot | roll (opening roll)
     "board": "auto",             # auto (real, else simulator) | real | sim
 }
 

@@ -27,9 +27,9 @@ PAGE = r"""<!doctype html>
 <title>AI-bg</title>
 <style>
 :root{--bg:#f4efe6;--card:#fffaf2;--ink:#2b2622;--mute:#7a6f64;--line:#d9cbb5;
- --robot:#f2f2ea;--human:#b0302a;--accent:#2f6f5e;--warn:#b5651d}
+ --robot:#2f5d9e;--human:#b0302a;--accent:#2f6f5e;--warn:#b5651d}
 @media (prefers-color-scheme:dark){:root{--bg:#1d1b19;--card:#27241f;--ink:#eee6da;--mute:#a3988a;
- --line:#4a4236;--robot:#e9e6dc;--human:#c8433b;--accent:#5bb39a;--warn:#e09a4f}}
+ --line:#4a4236;--robot:#5b8fd6;--human:#c8433b;--accent:#5bb39a;--warn:#e09a4f}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);
  font:15px/1.4 system-ui,-apple-system,Segoe UI,sans-serif}
 main{max-width:1180px;margin:0 auto;padding:16px;display:grid;gap:16px;
@@ -63,7 +63,7 @@ table{width:100%;border-collapse:collapse;font-size:13px}td{padding:3px 4px;bord
   <div id="warns"></div>
   <svg id="board" viewBox="-22 -22 454 464"></svg>
   <div class="mute">Drawn the same way round as the camera's top view next to it. Numbers are your columns.
-  White = robot, red = you.</div>
+  Blue = robot, red = you (black and white once the camera has seen the real checkers).</div>
 </section>
 <section style="display:grid;gap:16px;align-content:start">
   <div class="card"><h1>What the camera sees</h1><div class="mute">The board from above, circles = checkers found.</div>
