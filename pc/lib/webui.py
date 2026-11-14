@@ -32,9 +32,17 @@ PAGE = r"""<!doctype html>
  --line:#4a4236;--robot:#5b8fd6;--human:#c8433b;--accent:#5bb39a;--warn:#e09a4f}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);
  font:15px/1.4 system-ui,-apple-system,Segoe UI,sans-serif}
-main{max-width:1180px;margin:0 auto;padding:16px;display:grid;gap:16px;
- grid-template-columns:minmax(0,1.1fr) minmax(0,1fr)}
-@media (max-width:820px){main{grid-template-columns:1fr}}
+main{max-width:1180px;margin:0 auto;padding:16px;display:grid;gap:16px}
+.pair{display:grid;gap:16px;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start}
+@media (max-width:820px){.pair{grid-template-columns:1fr}}
+.pic{position:relative;width:100%;aspect-ratio:450/460;border-radius:8px;overflow:hidden;background:var(--bg);margin-top:8px}
+.pic svg,.pic img{position:absolute;inset:0;width:100%;height:100%;display:block;object-fit:fill;margin:0}
+button.big{font-size:22px;padding:14px 44px;border-radius:12px}
+button.small{font-size:12px;padding:3px 10px;opacity:.75}
+.swap{display:inline-flex;align-items:center;gap:8px;margin:4px 0 2px}
+.chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:20px;padding:4px 12px;font-weight:600;background:var(--card)}
+.sw{display:inline-block;width:16px;height:16px;border-radius:50%;border:1.5px solid #0008}
+.swapbtn{width:36px;height:36px;border-radius:50%;padding:0;font-size:18px;line-height:1;background:transparent;color:var(--ink);border:1px solid var(--line)}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
 h1{font-size:18px;margin:0 0 4px}.mute{color:var(--mute);font-size:13px}
 #prompt{font-size:20px;font-weight:600;margin:6px 0 10px}
@@ -50,7 +58,7 @@ button.sec{background:transparent;color:var(--ink);border:1px solid var(--line)}
 svg{width:100%;height:auto;display:block}
 .warn{color:var(--warn);font-size:13px}
 table{width:100%;border-collapse:collapse;font-size:13px}td{padding:3px 4px;border-bottom:1px solid var(--line)}
-#photo,.photo2{width:100%;border-radius:8px;display:none;margin-top:8px}
+#photo{display:none}.photo2{width:100%;border-radius:8px;display:none;margin-top:8px}
 .grid{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center}
 .stats{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:13px;margin-top:6px}
 </style></head><body><main>
@@ -58,18 +66,26 @@ table{width:100%;border-collapse:collapse;font-size:13px}td{padding:3px 4px;bord
   <h1>AI-bg <span class="mute" id="sim"></span></h1>
   <div id="prompt">…</div>
   <div id="asks"></div>
-  <div class="stats"><b id="turn"></b><span id="pips"></span><span id="offs"></span></div>
+  <div class="stats"><b id="turn"></b><span id="offs"></span></div>
+  <div class="swap" title="Which colour is whose">
+   <span class="chip"><i class="sw" style="background:var(--robot)"></i><span id="swr">Robot</span></span>
+   <button class="swapbtn" id="swapbtn" title="Swap the colours" aria-label="Swap the colours">⇄</button>
+   <span class="chip"><i class="sw" style="background:var(--human)"></i><span id="swh">You</span></span>
+  </div>
   <div id="coach" class="mute"></div>
   <div id="warns"></div>
-  <svg id="board" viewBox="-22 -22 454 464"></svg>
-  <div class="mute">Drawn the same way round as the camera's top view next to it. Numbers are your columns.
-  Blue = robot, red = you (black and white once the camera has seen the real checkers).</div>
+</section>
+<section class="pair">
+ <div class="card"><h1>The game</h1>
+  <div class="pic"><svg id="board" viewBox="-20 -20 450 460" preserveAspectRatio="none"></svg></div>
+  <div class="mute" style="margin-top:6px">Same way round as the camera's view next to it. Numbers are the columns.</div></div>
+ <div class="card"><h1>What the camera sees</h1>
+  <div class="pic"><img id="photo" alt="top view" style="display:none"></div>
+  <div class="mute" style="margin-top:6px">The board from above, circles = checkers found.</div></div>
 </section>
 <section style="display:grid;gap:16px;align-content:start">
-  <div class="card"><h1>What the camera sees</h1><div class="mute">The board from above, circles = checkers found.</div>
-   <img id="photo" alt="top view">
-   <details style="margin-top:8px"><summary class="mute">Original camera photo</summary>
-    <img id="top" class="photo2" alt="raw photo"></details></div>
+  <details class="card"><summary class="mute">Original camera photo</summary>
+   <img id="top" class="photo2" alt="raw photo"></details>
   <details class="card"><summary class="mute">Settings (used from the next New game)</summary>
    <div class="grid" id="settings" style="margin-top:8px"></div></details>
   <table id="hist" hidden></table>
@@ -103,8 +119,12 @@ function base(s,edit){let h=`<rect x="-20" y="-20" width="450" height="460" rx="
 function edPlace(ev){if(!ED)return;const svg=document.getElementById("board");const pt=svg.createSVGPoint();
  pt.x=ev.clientX;pt.y=ev.clientY;const q=pt.matrixTransform(svg.getScreenCTM().inverse());
  const [fx,y]=toFrame(q.x,q.y),left=fx<205;
+ if(Math.abs(fx-205)<22&&Math.abs(y-S.bar_y)<BARP*5){const st=Math.round((y-S.bar_y)/BARP),k=st>0?2*st:st<0?-2*st-1:0;
+  const p=EDC==="remove"?(k%2?25:0):(EDC==="robot"?0:25);
+  if(EDC==="remove"){if(p===0&&ED[0]>0)ED[0]--;if(p===25&&ED[25]<0)ED[25]++}
+  else if(p===0&&EDC==="robot")ED[0]++;else if(p===25&&EDC==="human")ED[25]--;
+  drawEdit(S);return}
  let best=null;for(const [x,ly,n] of S.labels){if((x<205)!==left)continue;const d=Math.abs(ly-y);if(!best||d<best[0])best=[d,25-n]}
- if(Math.abs(S.bar_y-y)<(best?best[0]:1e9))best=[0,left?0:25];
  if(!best)return;const p=best[1],sign=EDC==="robot"?1:-1;
  if(p===0||p===25){if(EDC==="remove"){if(p===0&&ED[0]>0)ED[0]--;if(p===25&&ED[25]<0)ED[25]++}
    else if(p===0&&EDC==="robot")ED[0]++;else if(p===25&&EDC==="human")ED[25]--}
@@ -112,16 +132,18 @@ function edPlace(ev){if(!ED)return;const svg=document.getElementById("board");co
  else if(ED[p]*sign<0)ED[p]=sign;else ED[p]+=sign;
  drawEdit(S)}
 function offOf(b){let r=0,h=0;for(const v of b){if(v>0)r+=v;else h-=v}return [15-r,15-h]}
-function stack(x,y,dir,v,side){// checkers side by side from the edge toward the middle, like a real board
- const n=Math.abs(v);if(!n)return "";const step=n>1?Math.min(26,138/(n-1)):0;let h="";
- for(let i=0;i<n;i++)h+=disc(x+dir*i*step,y,side);
- if(n>6)h+=txt(x+dir*(n-1)*step,y,n,13,ink(side),true);
+function stack(x,y,dir,v,side,vert){// checkers side by side from the edge toward the middle, like a real board
+ const n=Math.abs(v);if(!n)return "";const step=n>1?Math.min(vert?29:26,(vert?100:138)/(n-1)):0;let h="";
+ for(let i=0;i<n;i++)h+=vert?disc(x,y+dir*i*step,side):disc(x+dir*i*step,y,side);
+ if(n>6)h+=vert?txt(x,y+dir*(n-1)*step,n,13,ink(side),true):txt(x+dir*(n-1)*step,y,n,13,ink(side),true);
  return h}
+const BARP=29;// hit checkers of both colours: one column on the centre line, out from the middle (see layout.py)
+function barStep(k){return Math.floor((k+1)/2)*(k%2?-1:1)}
 function drawEdit(s){const svg=document.getElementById("board");
  let h=base(s,true)+txt(205,s.labels[11][1],"EDITING",13,"#c08000",true);
  for(const [x,y,n] of s.labels){const v=ED[25-n];if(v)h+=stack(x,y,x<205?1:-1,v,v>0?"robot":"human")}
- for(const [x,v,side,dir] of [[60,ED[0],"robot",1],[350,-ED[25],"human",-1]]){h+=txt(x,s.bar_y,"bar",11,"var(--mute)");
-  if(v)h+=stack(x+30*dir,s.bar_y,dir,v,side)}
+ for(let i=0;i<ED[0];i++)h+=disc(205,s.bar_y+barStep(2*i)*BARP,"robot");
+ for(let i=0;i<-ED[25];i++)h+=disc(205,s.bar_y+barStep(2*i+1)*BARP,"human");
  const o=offOf(ED);h+=txt(205,35,`off: robot ${o[0]} · you ${o[1]}`,12,"var(--mute)");
  svg.innerHTML=h}
 // -- dice: pips, a short tumble and a rattle when new dice appear --
@@ -151,14 +173,26 @@ function buildSettings(s){const g=document.getElementById("settings");g.innerHTM
    if(String(s[k])===String(o))op.selected=true;sel.append(op)}
   g.append(el("label",{text:NAMES[k]}),sel)}}
 function drawBoard(s){const svg=document.getElementById("board");
- let h=base(s,false)+txt(205,s.bar_y,"BAR",12,"var(--mute)")+txt(205,35,"bear-off",11,"var(--mute)");
+ let h=base(s,false)+txt(205,35,"bear-off",11,"var(--mute)");
  for(const [x,y,side] of s.pieces)h+=disc(x,y,side);
  svg.innerHTML=h}
 function ink(side){const c=getComputedStyle(document.documentElement).getPropertyValue("--"+side).trim();
  const m=/^#([0-9a-f]{6})$/i.exec(c);if(!m)return side==="robot"?"#000":"#fff";const n=parseInt(m[1],16);
  return (0.299*(n>>16)+0.587*((n>>8)&255)+0.114*(n&255))>150?"#000":"#fff"}
+const DEF={robot:"#2f5d9e",human:"#b0302a"};let SWAP=false;
+try{SWAP=localStorage.getItem("swapSides")==="1"}catch(e){}
+function edText(v){const c=getComputedStyle(document.documentElement).getPropertyValue("--"+v).trim();
+ return `click adds ${NAMEOF[c]||"a"} checker (${v==="robot"?"robot":"you"})`}
+const NAMEOF={"#f2f2ea":"white","#1c1c1c":"black","#2f5d9e":"blue","#b0302a":"red"};
 function paintSides(c){const r=document.documentElement.style;
- if(c){r.setProperty("--robot",c.robot);r.setProperty("--human",c.human)}else{r.removeProperty("--robot");r.removeProperty("--human")}}
+ if(!c&&!SWAP){r.removeProperty("--robot");r.removeProperty("--human")}
+ else{const b=c||DEF;r.setProperty("--robot",b[SWAP?"human":"robot"]);r.setProperty("--human",b[SWAP?"robot":"human"])}
+ const g=k=>NAMEOF[getComputedStyle(document.documentElement).getPropertyValue("--"+k).trim()]||"";
+ document.getElementById("swr").textContent="Robot"+(g("robot")?": "+g("robot"):"");
+ for(const v of ["robot","human"]){const o=document.querySelector(".ed-"+v);if(o)o.textContent=edText(v)}
+ document.getElementById("swh").textContent="You"+(g("human")?": "+g("human"):"")}
+document.getElementById("swapbtn").onclick=()=>{SWAP=!SWAP;try{localStorage.setItem("swapSides",SWAP?"1":"0")}catch(e){}
+ paintSides(S&&S.colours);if(S){if(ED)drawEdit(S);else drawBoard(S)}};
 function render(s){S=s;paintSides(s.colours);if(!built){buildSettings(s.settings);built=true}
  document.getElementById("sim").textContent=s.sim?"(simulator)":"";
  const p=document.getElementById("prompt");p.textContent=s.prompt;
@@ -171,18 +205,18 @@ function render(s){S=s;paintSides(s.colours);if(!built){buildSettings(s.settings
    if(k==="dice_input"){const i=el("input",{placeholder:"dice, e.g. 5 2",size:8});
     a.append(i,el("button",{text:"OK",onclick:()=>post({name:"dice",value:i.value})}))}
    else if(k==="edit"){const sel=el("select",{onchange:()=>{EDC=sel.value}});
-    for(const [v,t] of [["robot","click adds white (robot)"],["human","click adds red (you)"],["remove","click removes one"]])
-     sel.append(el("option",{value:v,text:t}));sel.value=EDC;
+    for(const [v,t] of [["robot",edText("robot")],["human",edText("human")],["remove","click removes one"]])
+     sel.append(el("option",{value:v,text:t,class:"ed-"+v}));sel.value=EDC;
     a.append(el("div",{class:"mute",text:"Fix the reading: click a point (or the bar) on the board."}),sel,
      el("button",{text:"Use this board",onclick:()=>post({name:"board",value:ED})}),
      el("button",{class:"sec",text:"Back to the camera's reading",onclick:()=>{ED=S.seen.slice();drawEdit(S)}}))}
    else if(k==="move_pick"){const sel=el("select");for(const m of s.legal)sel.append(el("option",{text:m}));
     a.append(sel,el("button",{text:"Play this",onclick:()=>post({name:"move",value:sel.value})}))}
-   else a.append(el("button",{text:BTN[k]||k,onclick:()=>post({name:k})}))}
-  a.append(el("button",{class:"sec",text:"New game",onclick:()=>post({name:"new"})}))}
+   else if(k==="new")continue;
+   else a.append(el("button",{class:k==="done"?"big":"",text:BTN[k]||k,onclick:()=>post({name:k})}))}
+  a.append(el("button",{class:"sec small",text:"New game",onclick:()=>post({name:"new"})}))}
+ paintSides(s.colours);
  document.getElementById("turn").textContent=s.winner?"":(s.turn==="robot"?"🤖 Robot's turn":s.turn?"🙂 Your turn":"");
- const ahead=s.pips[0]===s.pips[1]?"even race":(s.pips[0]<s.pips[1]?"robot is ahead":"you are ahead");
- document.getElementById("pips").textContent=`Steps left to finish: robot ${s.pips[0]}, you ${s.pips[1]} (${ahead})`;
  document.getElementById("offs").textContent=(s.off[0]||s.off[1])?`Taken off: robot ${s.off[0]}/15, you ${s.off[1]}/15`:"";
  document.getElementById("coach").textContent=s.coach||"";
  const w=document.getElementById("warns");w.innerHTML="";for(const t of s.warnings)w.append(el("div",{class:"warn",text:"⚠ "+t}));
@@ -195,6 +229,10 @@ function render(s){S=s;paintSides(s.colours);if(!built){buildSettings(s.settings
   const tp=document.getElementById("top");tp.src="/photo.jpg?t="+s.photo_t;tp.style.display="block"}}
 async function tick(){try{render(await (await fetch("/state")).json())}catch(e){}setTimeout(tick,500)}
 document.getElementById("board").addEventListener("click",edPlace);
+document.addEventListener("keydown",ev=>{// Enter = Done, when Done is offered and nothing is being typed
+ if(ev.key!=="Enter"||!S||!S.asks.includes("done"))return;
+ const t=document.activeElement&&document.activeElement.tagName;if(t==="INPUT"||t==="SELECT"||t==="BUTTON"||t==="TEXTAREA")return;
+ ev.preventDefault();post({name:"done"})});
 tick();
 </script></body></html>"""
 
