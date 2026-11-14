@@ -546,8 +546,13 @@ def change_cost(changed, L, b0, b1):
     """Mismatch between the slots seen to change and the slots that should change, counted
     per place (a checker put a slot further along its point still counts as the right point)."""
     exp = _expected(L, b0, b1)
+    p0, p1 = L.place(b0), L.place(b1)
+    at = [L.slot(w, i) for w, i in exp]
     seen, want = {}, {}
     for (w, i), ch in changed.items():
+        if ch and (w, i) not in p0 and (w, i) not in p1 and any(
+                np.hypot(*np.subtract(L.slot(w, i), q)) < L.checker for q in at):
+            continue   # an empty slot that overlaps a slot that should change (a point's 8th place by the bar)
         seen[w] = seen.get(w, 0) + int(ch)
     for w, i in exp:
         want[w] = want.get(w, 0) + 1

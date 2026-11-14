@@ -155,7 +155,8 @@ def test_collect_puts_a_pushed_checker_back():
     for _ in range(8):
         col.step()
     b.ck[3][0] = L.xmax / 2 + 10      # knocked into the middle lane, clear of any bar checker
-    b.ck[3][1] += 60
+    b.ck[3][1] = max(range(40, 400, 5), key=lambda y: min(np.hypot(c[0] - b.ck[3][0], c[1] - y)
+                                                           for c in b.ck if c is not b.ck[3]))
     col.step()
     last = json.loads(Path(d, "labels.jsonl").read_text().splitlines()[-1])
     truth = b.checkers()
