@@ -55,7 +55,7 @@ Also from a phone on the same WiFi (the address is printed).
 
 | file | what | options inside |
 |---|---|---|
-| `game.py` | turns, dice, reading the human's move, end of game, log in `games/` | mode: robot vs human / robot vs robot (demo) / watch (two people, the robot checks); human move: Done button / automatic (waits until the board shows a legal move) / pick it on the page and the robot moves it |
+| `game.py` | turns, dice, reading the human's move, end of game, log in `games/<date-time>/` | mode: robot vs human / robot vs robot (demo) / watch (two people, the robot checks); human move: Done button / automatic (waits until the board shows a legal move) / pick it on the page and the robot moves it |
 | `webui.py` | the page + terminal fallback (n, d, 52, ...) | |
 | `rules.py` | legal moves, simple engine, find the move between two boards | engine: gnubg / simple / random |
 | `layout.py` | where each checker goes, in mm (points, bar, bear-off trays, dice zone, park spot) | defaults from plan v4 fitted to 410x420; `teach_layout.py` fits it to the real board in 4 clicks |

@@ -24,7 +24,8 @@ board that fits best among the legal results of this roll (vision.closest). Exac
 accepted. Not exact but the photo is consistent (15 + 15) -> accepted with a warning
 (legality is only a warning, Nadav 7.11). Not consistent -> the page asks: read again
 after fixing / take the closest legal move.
-Every game: games/<date-time>.jsonl (one line per turn) and the photos next to it.
+Every game has its own folder: games/<date-time>/game.jsonl (one line per turn) and the
+photos 000.jpg, 001.jpg, ... next to it.
 """
 import sys  # noqa: E402
 from pathlib import Path as _P
@@ -239,7 +240,7 @@ class Game:
             self.photo_t = time.time()
         if self.logfile:
             n = len(self.history)
-            cv2.imencode(".jpg", img)[1].tofile(str(self.logfile.with_suffix("")) + f"_{n:03d}.jpg")  # works with Hebrew paths
+            cv2.imencode(".jpg", img)[1].tofile(str(self.logfile.parent / f"{n:03d}.jpg"))  # works with Hebrew paths
         self.last_img = img
         with self.lock:
             self.seen = list(r.board) if r.board else list(self.board)
@@ -566,8 +567,9 @@ class Game:
     # -- game ---------------------------------------------------------------------
     def setup(self):
         self.connect()
-        GAMES.mkdir(exist_ok=True)
-        self.logfile = GAMES / f"{datetime.now():%Y%m%d-%H%M%S}.jsonl"
+        folder = GAMES / f"{datetime.now():%Y%m%d-%H%M%S}"    # one folder per game (Nadav 14.11)
+        folder.mkdir(parents=True, exist_ok=True)
+        self.logfile = folder / "game.jsonl"
         if self.model is None:
             try:
                 if self.is_sim:
