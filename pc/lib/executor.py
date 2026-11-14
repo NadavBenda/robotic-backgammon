@@ -261,12 +261,14 @@ class Executor:
         nearest free target of its colour; a target taken by a wrong checker is freed
         first. Returns the number of drags."""
         targets = {"robot": [], "human": []}
+        slot_of = {}                                  # target xy -> (place, index in it)
         for (where, i), (xy, side) in self.L.place(board).items():
             targets[side].append(tuple(xy))
-        current = []   # (x, y, side) from places
+            slot_of[tuple(xy)] = (where, i)
+        current = []   # (x, y, side, place) from places
         for where, lst in self.places.items():
             side = (self.side_of.get(where) if isinstance(where, int) else where.split("_")[1])
-            current += [(p[0], p[1], side) for p in lst]
+            current += [(p[0], p[1], side, where) for p in lst]
         if sum(1 for c in current if c[2] == "robot") < 15 or sum(1 for c in current if c[2] == "human") < 15:
             self.warnings.append("fewer than 15 checkers of a side seen; arranging what is there")
         moves = 0
@@ -284,15 +286,34 @@ class Executor:
             if not todo:
                 break
             free = {s: [t for t in targets[s] if t not in done] for s in targets}
-            # a target nobody (wrong) stands on, nearest first
+
+            def top_of_column(c):
+                """No checker stands farther from the board edge in the same place: the board
+                keeps looking valid (no gaps) when it is lifted (Nadav 14.11)."""
+                e = self.L.slot(c[3], 0)
+                d = np.hypot(c[0] - e[0], c[1] - e[1])
+                return all(np.hypot(o[0] - e[0], o[1] - e[1]) <= d + 1 for o in cur if o is not c and o[3] == c[3])
+
+            def fills_from_the_edge(t):
+                """Every lower place of the same column is already done (or nobody needs it)."""
+                where, idx = slot_of[t]
+                return all((tuple(self.L.slot(where, k)) in done) or (tuple(self.L.slot(where, k)) not in slot_of)
+                           for k in range(idx))
             best = None
-            for c in todo:
-                for t in free[c[2]]:
-                    if any(np.hypot(o[0] - t[0], o[1] - t[1]) < self.L.checker - 2 for o in cur if o is not c):
+            for rule in (3, 2, 1, 0):   # both rules; then only the lifting rule; only the filling rule; neither
+                for c in todo:
+                    if rule & 2 and not top_of_column(c):
                         continue
-                    d = np.hypot(c[0] - t[0], c[1] - t[1])
-                    if best is None or d < best[0]:
-                        best = (d, c, t)
+                    for t in free[c[2]]:
+                        if rule & 1 and not fills_from_the_edge(t):
+                            continue
+                        if any(np.hypot(o[0] - t[0], o[1] - t[1]) < self.L.checker - 2 for o in cur if o is not c):
+                            continue
+                        d = np.hypot(c[0] - t[0], c[1] - t[1])
+                        if best is None or d < best[0]:
+                            best = (d, c, t)
+                if best is not None:
+                    break
             if best is None:   # every free target is covered by a wrong checker: move one to the lane
                 c = todo[0]
                 lane = sum(self.L.lane_x()) / 2
@@ -306,6 +327,7 @@ class Executor:
                        xmax=self.L.xmax, ymax=self.L.ymax, settle_s=self.settle_s,
                    corners=bool(self.grab_s))
             c[0], c[1] = t
+            c[3] = slot_of[tuple(t)][0] if tuple(t) in slot_of else c[3]
             self.cart = tuple(t)
             moves += 1
         if park:

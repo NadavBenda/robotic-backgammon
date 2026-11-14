@@ -147,12 +147,15 @@ def test_collect_puts_a_pushed_checker_back():
             k = min(range(len(S)), key=lambda i: np.hypot(S[i][0] - x, S[i][1] - y))
             if np.hypot(S[k][0] - x, S[k][1] - y) <= 14:
                 out.append((S[k][0], S[k][1], s))
+            else:
+                out.append((x, y, s))      # not on a slot: seen where it lies
         return out
     col.detect = detect
     assert col.start()
     for _ in range(8):
         col.step()
-    b.ck[3][0] = L.xmax / 2 + 10      # knocked into the middle lane
+    b.ck[3][0] = L.xmax / 2 + 10      # knocked into the middle lane, clear of any bar checker
+    b.ck[3][1] += 60
     col.step()
     last = json.loads(Path(d, "labels.jsonl").read_text().splitlines()[-1])
     truth = b.checkers()

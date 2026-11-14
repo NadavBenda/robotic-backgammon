@@ -16,7 +16,7 @@ the board edge toward the middle lane, 6 fit before the lane, the 7th spills ove
         12  o o o o o o           o o o o o o  13      far side
         ..                                     ..
          7                                     18
-        BAR robot o o                     o o BAR human
+        BAR: hit checkers of both colours stand in one column on the centre line (x = 205)
          6                                     19
         ..                                     ..
          1  o o o o o o           o o o o o o  24
@@ -91,11 +91,13 @@ class Layout:
             k = q - 1 if q <= 6 else q
             return right(i), self._row_y(k)
         if where in ("bar_robot", "bar_human"):
-            # the bar row, a hit checker goes to the middle (Nadav 12.11): the first in the
-            # middle of the half row, the next ones toward the lane (each new one comes from
-            # the lane and must not pass the ones already there), then outward
-            j = (3, 4, 5, 2, 1, 0)[i] if i < 6 else i
-            return (left(j) if where == "bar_robot" else right(j)), self._row_y(6)
+            # hit checkers of both colours stand in one column on the centre line of the board
+            # (x = xmax / 2, Nadav 14.11), out from the middle of the bar row: the robot's 1st at the
+            # middle, the person's 1st one pitch toward the far side, the robot's 2nd one pitch the
+            # other way, and so on (each colour has its own places, so the camera knows whose is whose)
+            k = 2 * i + (1 if where == "bar_human" else 0)
+            step = (k + 1) // 2 * (-1 if k % 2 else 1)
+            return self.xmax / 2, self._row_y(6) + step * self.row_pitch
         if where in ("off_robot", "off_human"):
             r, j = divmod(i, self.per_row_off)
             if r >= len(self.off_rows_y):   # 15th checker: past the end of the last row
@@ -150,13 +152,17 @@ class Layout:
         mid = self.xmax / 2
         left = nx < mid
         cands = []
+        for w in ("bar_robot", "bar_human"):          # a checker on the centre line near a bar place
+            for i in range(4):                       # (a long point's spill reaches 14 mm from the line)
+                bx, by = self._nominal(w, i)
+                if np.hypot(nx - bx, ny - by) <= 11.0:
+                    return ("bar", w.split("_")[1])
         for k in range(13):
-            d = abs(ny - self._row_y(k))
             if k == 6:
-                cands.append((d, ("bar", "robot" if left else "human")))
-            else:
-                q = k + 1 if k < 6 else k
-                cands.append((d, ("point", q if left else 25 - q)))
+                continue
+            d = abs(ny - self._row_y(k))
+            q = k + 1 if k < 6 else k
+            cands.append((d, ("point", q if left else 25 - q)))
         for ry in self.off_rows_y:
             cands.append((abs(ny - ry), ("off", "robot" if left else "human")))
         d, key = min(cands, key=lambda c: c[0])

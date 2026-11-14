@@ -148,7 +148,7 @@ def _peaks(score, xs, min_sep):
 
 def find_scan(lab, c, L, model, step=3.0):
     found = []
-    nrow = [L._row_y(k) for k in range(13)] + list(L.off_rows_y)
+    nrow = [L._row_y(k) for k in range(13) if k != 6] + list(L.off_rows_y)   # no row at the bar: its checkers stand on the centre line
     mid = L.xmax / 2
     for ny in nrow:
         for half in (0, 1):
@@ -178,7 +178,14 @@ def find_scan(lab, c, L, model, step=3.0):
                         if best is None or s > best[0]:
                             best = (s, q, "robot" if dd[1] < dd[2] else "human")
                 found.append((float(best[1][0]), float(best[1][1]), best[2]))
-    return found
+    bars = []
+    for w in ("bar_robot", "bar_human"):      # hit checkers: a few places on the centre line
+        xy = [L.slot(w, i) for i in range(4)]
+        cls, _ = model.classify(features(lab, c, xy))
+        bars += [(float(q[0]), float(q[1]), k) for q, k in zip(xy, cls) if k != "empty"]
+    # the row scans can see a bar checker from the side: it counts once, as a bar checker
+    found = [f for f in found if all(np.hypot(f[0] - b[0], f[1] - b[1]) > L.checker * 0.6 for b in bars)]
+    return found + bars
 
 
 def find_slots(lab, c, L, model, depth=8):
