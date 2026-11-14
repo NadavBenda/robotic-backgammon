@@ -304,12 +304,10 @@ class Collector:
         if self.auto:
             return default
         ui.show(WIN, ui.with_bar(view, lines))
-        for _ in range(30):       # a key pressed earlier (the Enter of a terminal question) is not an answer
-            cv2.waitKey(10)
-        while True:
-            k = cv2.waitKey(50) & 0xFF
-            ch = "\r" if k in (13, 10) else chr(k).lower() if k < 128 else ""   # Caps Lock does not matter
-            if ch in keys:
+        ui.drain_keys()           # a key pressed earlier (the Enter of a terminal question) is not an answer
+        while True:               # the key may come from the photo window or from the terminal
+            ch = ui.wait_char(50)
+            if ch and ch in keys:
                 return ch
 
     def peek(self, view, lines):
@@ -317,7 +315,7 @@ class Collector:
         if self.auto:
             return False
         ui.show(WIN, ui.with_bar(view, lines))
-        return (cv2.waitKey(30) & 0xFF) in (ord("q"), ord("Q"))
+        return ui.wait_char(30) == "q"
 
     def check(self, img, why, mark=None, seen=None, moved=None, arrow=None):
         """Ask until the photo matches the drawing. Returns the photo to keep, or None (stop).
