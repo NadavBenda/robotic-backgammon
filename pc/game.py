@@ -25,7 +25,8 @@ accepted. Not exact but the photo is consistent (15 + 15) -> accepted with a war
 (legality is only a warning, Nadav 7.11). Not consistent -> the page asks: read again
 after fixing / take the closest legal move.
 Every game has its own folder: games/<date-time>/game.jsonl (one line per turn) and the
-photos 000.jpg, 001.jpg, ... next to it.
+photos next to it, every one kept: 000_move00.jpg, 001_move00.jpg, 002_move01.jpg, ...
+(running number + how many moves were played). The folder appears at the first move.
 """
 import sys  # noqa: E402
 from pathlib import Path as _P
@@ -98,6 +99,8 @@ class Game:
         self.seen = None                   # the board the camera read last (the page can edit it)
         self.winner = None
         self.logfile = None
+        self.shots = []                    # photos taken before the first move (the folder is made then)
+        self.shot_n = 0                    # running number of the game's photos
 
     def snapshot(self):
         with self.lock:
@@ -239,8 +242,11 @@ class Game:
             self.photo_top = cv2.imencode(".jpg", top)[1].tobytes()
             self.photo_t = time.time()
         if self.logfile:
-            n = len(self.history)
-            cv2.imencode(".jpg", img)[1].tofile(str(self.logfile.parent / f"{n:03d}.jpg"))  # works with Hebrew paths
+            # every photo is kept: its running number + the number of moves played when it was taken
+            name = f"{self.shot_n:03d}_move{len(self.history):02d}.jpg"
+            self.shot_n += 1
+            self.shots = (self.shots + [(name, cv2.imencode(".jpg", img)[1])])[-6:]
+            self.flush_shots()
         self.last_img = img
         with self.lock:
             self.seen = list(r.board) if r.board else list(self.board)
@@ -308,6 +314,14 @@ class Game:
         return tuple(d)
 
     # -- turns ---------------------------------------------------------------------
+    def flush_shots(self):
+        """Write the waiting photos, once the game has its folder (made at the first move, so
+        a game that was only opened leaves no folder behind)."""
+        if self.logfile and self.logfile.parent.exists():
+            for name, buf in self.shots:
+                buf.tofile(str(self.logfile.parent / name))   # works with Hebrew paths
+            self.shots = []
+
     def record(self, who, d, steps, before, after, note=""):
         txt = rules.move_text(steps) if steps is not None else "?"
         item = {"n": len(self.history) + 1, "who": who, "dice": list(d), "move": txt,
@@ -316,6 +330,8 @@ class Game:
         with self.lock:
             self.history.append(item)
         if self.logfile:
+            self.logfile.parent.mkdir(parents=True, exist_ok=True)
+            self.flush_shots()
             with open(self.logfile, "a", encoding="utf-8") as f:
                 f.write(json.dumps(item) + "\n")
 
@@ -567,9 +583,8 @@ class Game:
     # -- game ---------------------------------------------------------------------
     def setup(self):
         self.connect()
-        folder = GAMES / f"{datetime.now():%Y%m%d-%H%M%S}"    # one folder per game (Nadav 14.11)
-        folder.mkdir(parents=True, exist_ok=True)
-        self.logfile = folder / "game.jsonl"
+        # one folder per game (Nadav 14.11), made when the first move is recorded
+        self.logfile = GAMES / f"{datetime.now():%Y%m%d-%H%M%S}" / "game.jsonl"
         if self.model is None:
             try:
                 if self.is_sim:
