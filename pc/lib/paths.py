@@ -33,6 +33,8 @@ XMAX, YMAX = 410.0, 420.0
 OVERSHOOT = 5.0   # mm past the target along the last line (the checker lags), then back
 SETTLE_S = 0.4    # s on the target with the magnet still on, so the checker centres over it
 GRAB_S = 0.3      # s after the magnet turns on
+EDGE_MM = 5.0     # paths keep this far from x = 0 and y = 0: a move toward 0 that touches a limit switch
+                  # stops the board with ERR LIMIT_X / LIMIT_Y and it must home again (Nadav 14.11)
 LEAD_MM = 35.0    # a drag starts with one straight run of at least this (Nadav 14.11): the checker is
                   # picked up there at full acceleration, a turn straight away would let it slip off
 ROUND_MM = 10.0   # a sharp corner is cut by one short line from this far before it to this far after
@@ -175,7 +177,7 @@ def _long_start(path, others, need, lead=None):
         d = A(path[1]) - A(path[0])
         q = A(path[0]) + d / max(float(np.hypot(*d)), 1e-9) * lead      # or go on straight to `lead` and turn there
         if _seg_ok(A(path[0]), q, others, need) and _seg_ok(q, A(path[2]), others, need) \
-                and 0 <= q[0] <= XMAX and 0 <= q[1] <= YMAX:
+                and EDGE_MM <= q[0] <= XMAX and EDGE_MM <= q[1] <= YMAX:
             path[1] = (float(q[0]), float(q[1]))
         break
     return path
@@ -201,6 +203,7 @@ def plan(start, goal, others=(), xmax=XMAX, ymax=YMAX, clear=CLEAR, soft_mm=SOFT
     pts = np.stack([gx, gy], -1)
     d = np.hypot(pts[..., None, 0] - others[:, 0], pts[..., None, 1] - others[:, 1])
     free = np.all(d >= need, axis=-1)
+    free &= (gx >= EDGE_MM) & (gy >= EDGE_MM)     # the limit switches sit at x = 0 and y = 0
     # 0 far from all; 1 per checker at the hard limit; grows fast closer in
     near = (np.clip((soft_mm - d) / (soft_mm - clear), 0, 1) ** 2).sum(-1) if soft_mm > clear \
         else np.zeros(d.shape[:-1])

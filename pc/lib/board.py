@@ -16,6 +16,9 @@ import serial  # pip install pyserial
 from serial.tools import list_ports
 
 
+MIN_MM = 2.0      # no move goes nearer x = 0 / y = 0, where the limit switches are
+
+
 class BoardError(RuntimeError):
     pass
 
@@ -116,7 +119,16 @@ class Board:
             self.home()
 
     def move(self, x_mm, y_mm):
-        self.command(f"G {x_mm:.2f} {y_mm:.2f}", timeout=30)
+        x_mm, y_mm = max(float(x_mm), MIN_MM), max(float(y_mm), MIN_MM)   # 0 is on the limit switch
+        try:
+            self.command(f"G {x_mm:.2f} {y_mm:.2f}", timeout=30)
+        except BoardError as e:
+            if "LIMIT_" not in str(e):
+                raise
+            # a limit switch stopped the move (the board is no longer homed): home and go on
+            print(f"{e}: homing again, then the same move")
+            self.home()
+            self.command(f"G {x_mm:.2f} {y_mm:.2f}", timeout=30)
 
     def move_by(self, dx_mm, dy_mm):
         self.command(f"R {dx_mm:.2f} {dy_mm:.2f}", timeout=30)
