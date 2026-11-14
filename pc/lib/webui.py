@@ -74,7 +74,7 @@ table{width:100%;border-collapse:collapse;font-size:13px}td{padding:3px 4px;bord
 <script>
 const OPTS={mode:["robot_vs_human","robot_vs_robot","watch"],engine:["gnubg","simple","random"],
  dice:["digital","typed","camera"],human_move:["done_button","auto","robot_moves"],
- vision:["norm","learned","cnn","both","scan","slots","hough"],coach:[false,true],first:["roll","robot","human"],board:["auto","real","sim"]};
+ vision:["learned","norm"],coach:[false,true],first:["roll","robot","human"],board:["auto","real","sim"]};
 const NAMES={mode:"Mode",engine:"Engine",dice:"Dice",human_move:"Your move",vision:"Vision",
  coach:"Coach",first:"Who starts",board:"Board"};
 const BTN={new:"New game",done:"Done",accept:"Accept",reread:"Read again",closest:"Take closest legal move",
