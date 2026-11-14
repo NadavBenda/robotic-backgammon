@@ -125,6 +125,29 @@ def test_collect_random_moves():
         collect.vision.change_cost = real
 
 
+def test_collect_endgame_fills_the_homes():
+    """collect_endgame.py: most moves go into the movers' homes."""
+    import tempfile
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    import collect
+    import collect_endgame  # noqa: F401  (sets HOME_P etc. on collect)
+    try:
+        L = Layout.load()
+        b = SimBoard.with_board(rules.OPENING, L)
+        d = tempfile.mkdtemp()
+        collect.STATE = Path(d) / "state.json"
+        col = collect.Collector(b, b.calib, L, d, auto=True, seed=5, log=lambda *a: None)
+        assert col.start()
+        for _ in range(25):
+            col.step()
+        bd = col.board()
+        home = sum(bd[p] for p in range(1, 7) if bd[p] > 0) - sum(bd[p] for p in range(19, 25) if bd[p] < 0)
+        assert home >= 14 and b.bumps == 0, (home, bd, b.bumps)
+    finally:
+        collect.HOME_P, collect.TRAY_P, collect.BAR_P, collect.RUN_TAG = 0.0, 0.12, 0.12, ""
+
+
 def test_collect_puts_a_pushed_checker_back():
     """collect.py: a checker knocked into the lane is found (the detector's reading + a new
     round shape where something changed) and dragged back to its place by the robot."""

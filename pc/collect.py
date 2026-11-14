@@ -73,6 +73,8 @@ BAR_P = 0.12           # share of moves to the bar (hit checkers)
 TRAY_P = 0.12          # share of moves to a bear-off tray
 BAR_MAX = 4            # checkers per bar half (the detector looks at 4 places)
 RANDOM_P = 0.3         # share of moves picked at random; the rest go where the dataset is thinnest
+HOME_P = 0.0           # share of column moves that go into the mover's home (collect_endgame.py: 0.85)
+RUN_TAG = ""           # added to the run folder's name ("-endgame")
 STOP_COST = 1          # any place that changed more / less than the move explains -> second opinion, then stop
 COLOURS = {"robot": (80, 220, 80), "human": (0, 165, 255)}
 DIFF = (220, 60, 220)  # purple: where the camera (the trained detector) reads something else
@@ -518,6 +520,10 @@ class Collector:
             w *= 1.0 + self.weak.get(name, 0) / (1.0 + np.mean(list(self.weak.values())))
         return w
 
+    @staticmethod
+    def _in_home(p, side):
+        return 1 <= p <= 6 if side == "robot" else 19 <= p <= 24
+
     def random_move(self):
         """(from, to, side, goal xy, off-centre mm or 0). Where to: BAR_P to the bar,
         TRAY_P to a bear-off tray, the rest to a column; RANDOM_P of the moves picked at
@@ -530,6 +536,10 @@ class Collector:
         kind = "bar" if r < BAR_P else "off" if r < BAR_P + TRAY_P else "point"
         cands = [m for m in allm if (isinstance(m[1], int) if kind == "point" else str(m[1]).startswith(kind))]
         cands = cands or allm
+        if kind == "point" and HOME_P and self.rng.random() < HOME_P:   # end-of-game positions: full homes
+            home = [m for m in cands if m[1] in (range(1, 7) if m[2] == "robot" else range(19, 25))
+                    and m[0] != m[1] and not (isinstance(m[0], int) and self._in_home(m[0], m[2]))]
+            cands = home or [m for m in cands if m[1] in (range(1, 7) if m[2] == "robot" else range(19, 25))] or cands
         if self.rng.random() < RANDOM_P:
             frm = self.rng.choice(sorted({m[0] for m in cands}, key=str))
             frm, to, side = self.rng.choice([m for m in cands if m[0] == frm])
@@ -672,7 +682,7 @@ def main():
     L = Layout.load()
     c = calib.load()
     moves = ask_int("How many moves this run? Enter = 10 (a short first try): ", 10)
-    folder = DATA / f"{datetime.now():%Y%m%d-%H%M%S}"
+    folder = DATA / f"{datetime.now():%Y%m%d-%H%M%S}{RUN_TAG}"
     log = run_log(folder)
     try:      # the calibration of this run, so a later recalibration does not spoil these photos
         import shutil
