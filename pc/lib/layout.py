@@ -13,16 +13,18 @@ and the real checker (26 mm). Points are rows; checkers in a point stand in a li
 the board edge toward the middle lane, 6 fit before the lane, the 7th spills over:
 
         x=0 ............ lane ............ x=410
-        12  o o o o o o           o o o o o o  13      far side
+         1  o o o o o o           o o o o o o  24      far side (homes, by the camera; Nadav 14.11)
         ..                                     ..
-         7                                     18
-        BAR: hit checkers of both colours stand in one column on the centre line (x = 205)
          6                                     19
+        BAR: hit checkers of both colours stand in one column on the centre line (x = 205)
+         7                                     18
         ..                                     ..
-         1  o o o o o o           o o o o o o  24
-        OFF robot 2x7      |      OFF human 2x7      near side (motors / camera)
+        12  o o o o o o           o o o o o o  13
+        OFF robot 2x7      |      OFF human 2x7      near side (trays)
 
-Robot numbering: the robot moves 24 -> 1 and bears off from 1..6 (left, near side);
+(homes_far = False puts 1/24 next to the trays and 12/13 at the far side, as before 14.11.)
+
+Robot numbering: the robot moves 24 -> 1 and bears off from 1..6 (left) to its tray;
 the human's point p is the robot's 25 - p. Which corner of that picture is (0, 0) for
 the magnet is set by flip_x / flip_y, or measured once with teach_layout.py (an affine
 fit from 4+ clicked reference slots, stored in layout.json as "affine").
@@ -46,11 +48,13 @@ class Layout:
     checker: float = 26.0
     pitch_x: float = 27.0          # centre to centre along a point
     row_pitch: float = 29.0        # centre to centre between points (rows)
-    first_row_y: float = 62.0      # y of points 1 / 24 (the row next to the bear-off strip)
+    first_row_y: float = 62.0      # y of the row next to the bear-off strip
     off_rows_y: tuple = (2.0, 31.0)  # the 2 rows of each bear-off tray
     edge_x: float = 2.0            # x of the first checker on the left points (right: xmax - edge_x);
                                    # 2 mm inside the travel, so the 3 mm overshoot still works there
     per_row_off: int = 7
+    homes_far: bool = True         # True (Nadav 14.11): points 1-6 / 19-24 at the far end (by the camera),
+                                   # 12/13 next to the bear-off trays; False: the picture above
     flip_x: bool = False           # True: the picture above is mirrored left-right for the magnet
     flip_y: bool = False           # True: points 12/13 are at y=0 instead of y=ymax
     affine: list = field(default=None)  # 2x3, from teach_layout.py; replaces flip_x/flip_y
@@ -84,12 +88,11 @@ class Layout:
             p = int(where)
             if not 1 <= p <= 24:
                 raise ValueError(f"no point {p}")
-            if p <= 12:   # left column, 1 at the near side
-                k = p - 1 if p <= 6 else p
-                return left(i), self._row_y(k)
-            q = 25 - p    # 13..24 on the right: 24 near, 13 far
+            q = p if p <= 12 else 25 - p   # 1..12 on the left, 24..13 on the right
             k = q - 1 if q <= 6 else q
-            return right(i), self._row_y(k)
+            if self.homes_far:
+                k = 12 - k
+            return (left(i) if p <= 12 else right(i)), self._row_y(k)
         if where in ("bar_robot", "bar_human"):
             # hit checkers of both colours stand in one column on the centre line of the board
             # (x = xmax / 2, Nadav 14.11), out from the middle of the bar row: the robot's 1st at the
@@ -161,7 +164,8 @@ class Layout:
             if k == 6:
                 continue
             d = abs(ny - self._row_y(k))
-            q = k + 1 if k < 6 else k
+            kk = 12 - k if self.homes_far else k
+            q = kk + 1 if kk < 6 else kk
             cands.append((d, ("point", q if left else 25 - q)))
         for ry in self.off_rows_y:
             cands.append((abs(ny - ry), ("off", "robot" if left else "human")))
