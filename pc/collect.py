@@ -67,8 +67,9 @@ DATA = ROOT / "dataset"
 STATE = DATA / "last_state.json"
 WIN = "collect"
 MAX_STACK = 6          # checkers per point (the 7th reaches into the lane)
-OFF_CENTRE_P = 0.3     # share of moves that put the checker a few mm off centre
-OFF_CENTRE_MM = (3.0, 7.0)
+OFF_CENTRE_P = 0.6     # share of moves put off centre, like a person does (Nadav 14.11: the detector
+                       # misread hand-placed checkers; was 0.3 and 3-7 mm)
+OFF_CENTRE_MM = (3.0, 9.0)   # 11 mm made the robot push neighbours in the simulator
 BAR_P = 0.12           # share of moves to the bar (hit checkers)
 TRAY_P = 0.12          # share of moves to a bear-off tray
 BAR_MAX = 4            # checkers per bar half (the detector looks at 4 places)
