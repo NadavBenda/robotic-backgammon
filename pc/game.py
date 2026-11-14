@@ -16,14 +16,13 @@ Everything is chosen on the page (Settings), not with flags:
             moves your checkers (remote play, or nobody wants to touch the board)
   Vision    norm (default, measured on the real board 12.11) / scan / slots / hough  (see vision.py)
 
-How a human move is read: park the magnet in the lane, photo. First by change: compare
-with the photo before the move (vision.closest_by_change); if exactly one legal move explains
-the slots that changed, that is the move (no colours needed; notes, light and hidden spots
-cancel out). Otherwise: vision.read, then the
-board that fits best among the legal results of this roll (vision.closest). Exact fit ->
-accepted. Not exact but the photo is consistent (15 + 15) -> accepted with a warning
-(legality is only a warning, Nadav 7.11). Not consistent -> the page asks: read again
-after fixing / take the closest legal move.
+How a human move is read (the "depressive" reading, Nadav 14.11): park the magnet in the
+lane, photo, compare with the photo before the move (vision.rank_by_change). Every legal
+result of the roll gets a cost: how far what changed is from what that move changes (soft
+counts per place, so a checker a little off its line costs a fraction). The best is taken
+only when its cost <= CHANGE_OK and the next one is at least CHANGE_MARGIN worse; otherwise
+the page asks, with the most likely moves first (or fix the checkers and read again, or
+fix the board on the page). The detector is used only when there is no photo before.
 Every game has its own folder: games/<date-time>/game.jsonl (one line per turn) and the
 photos next to it, every one kept: 000_move00.jpg, 001_move00.jpg, 002_move01.jpg, ...
 (running number + how many moves were played). The folder appears at the first move.
@@ -51,6 +50,8 @@ from gnubg import BAR, OFF, Step  # noqa: F401
 from layout import Layout
 
 GAMES = Path(__file__).parent / "games"
+CHANGE_OK = 2.0       # the depressive reading takes a move only if it explains the photos this well
+CHANGE_MARGIN = 1.0   # ... and the next legal move is at least this much worse (else: ask)
 
 DEFAULTS = {
     "mode": "robot_vs_human",    # robot_vs_human | robot_vs_robot | watch
@@ -475,18 +476,52 @@ class Game:
                     break
             r, _ = self.look()
         if before is not None and self.last_img is not before:
-            best, cost, margin = vision.closest_by_change(before, self.last_img, self.c, self.L,
-                                                          self.board, cands)
-            agree = vision.closest(r, cands)[0] == best
-            # one legal move explains what changed: clearly better than the rest, or the
-            # second best is just one slot worse and the colour reading picks the same move
-            if cost == 0 and (margin >= 2 or (margin >= 1 and agree)):
-                steps = next(s for s, nb in plays if to_robot(nb) == best)
-                self.log_fn(f"{side}'s move read by change: {rules.move_text(steps)}")
-                self.finish_human(side, d, steps, best, "read by change")
-                self.ex.set_from_board(best)
+            if self.read_by_change(before, cands, plays, d, side, to_robot):
                 return
         self.accept_reading(r, cands, plays, hv, d, side, to_robot, before)
+
+    def read_by_change(self, before, cands, plays, d, side, to_robot):
+        """The "depressive" reading (Nadav 14.11): the new board is always one of the legal
+        results of the roll, the one that best explains what changed between the photos.
+        Taken only when it fits well (cost <= CHANGE_OK) AND is clearly ahead of the next one
+        (by CHANGE_MARGIN); otherwise the game stops and asks, offering the best few first.
+        True when the move was settled here."""
+        while True:
+            ranked = vision.rank_by_change(before, self.last_img, self.c, self.L, self.board, cands)
+            c1, best = ranked[0]
+            c2 = ranked[1][0] if len(ranked) > 1 else 99.0
+            text = lambda cb: next(rules.move_text(s) for s, nb in plays if to_robot(nb) == cb)  # noqa: E731
+            self.log_fn(f"{side}'s move by change: {text(best)} cost {c1:.2f}, next {c2:.2f}")
+            if c1 <= CHANGE_OK and c2 - c1 >= CHANGE_MARGIN:
+                steps = next(s for s, nb in plays if to_robot(nb) == best)
+                self.finish_human(side, d, steps, best, f"read by change ({c1:.1f} / {c2:.1f})")
+                self.ex.set_from_board(best)
+                return True
+            top = [text(cb) for _, cb in ranked[:3]]
+            why = "not sure" if c1 <= CHANGE_OK else "the photo does not fit any legal move well"
+            with self.lock:
+                self.legal = top + sorted(t for t in (rules.move_text(s) for s, _ in plays) if t not in top)
+            self.say(f"I'm {why}. Most likely: {' / '.join(top)}. Pick the move you made "
+                     "(the likely ones are first), or fix the checkers and press Read again",
+                     "check", ["move_pick", "reread", "edit"])
+            a = self.wait("move", "reread", "board")
+            if a["name"] == "move":
+                hit = [(s, nb) for s, nb in plays if rules.move_text(s) == a.get("value")]
+                if hit:
+                    rank = next((i for i, (_, cb) in enumerate(ranked) if cb == to_robot(hit[0][1])), -1)
+                    self.finish_human(side, d, hit[0][0], to_robot(hit[0][1]),
+                                      f"picked on the page (was no. {rank + 1} by change; {c1:.1f} / {c2:.1f})")
+                    self.ex.set_from_board(to_robot(hit[0][1]))
+                    return True
+                continue
+            if a["name"] == "board" and self._valid(a.get("value")):
+                b = [int(v) for v in a["value"]]
+                legal = [s for s, nb in plays if to_robot(nb) == b]
+                self.finish_human(side, d, legal[0] if legal else None, b,
+                                  "fixed on the page" + ("" if legal else " (not a legal move)"))
+                self.ex.set_from_board(b)
+                return True
+            self.look()
 
     def sim_hand_move(self, hv, d, text, side):
         for s, nb in rules.legal_moves(hv, d):

@@ -583,6 +583,44 @@ def anchor(r, board, changed):
     return out
 
 
+def soft_change_cost(dv, t, L, b0, b1):
+    """change_cost with soft counts (the "depressive" reading, Nadav 14.11): a slot counts
+    as clip(d / t - 0.5, 0, 1) changed, so a checker put a little off its line, which half
+    changes a neighbouring slot, costs a fraction instead of a whole mismatch."""
+    exp = _expected(L, b0, b1)
+    p0, p1 = L.place(b0), L.place(b1)
+    at = [L.slot(w, i) for w, i in exp]
+    seen, want = {}, {}
+    for (w, i), d in dv.items():
+        s = min(1.0, max(0.0, d / t - 0.5))
+        if s and (w, i) not in p0 and (w, i) not in p1 and any(
+                np.hypot(*np.subtract(L.slot(w, i), q)) < L.checker for q in at):
+            continue   # an empty slot that overlaps a slot that should change
+        seen[w] = seen.get(w, 0.0) + s
+    for w, i in exp:
+        want[w] = want.get(w, 0) + 1
+    return float(sum(abs(seen.get(w, 0.0) - want.get(w, 0)) for w in set(seen) | set(want)))
+
+
+def rank_by_change(before, after, c, L, board, candidates):
+    """[(cost, board)] every distinct candidate, best first, judged only by what changed
+    between the two photos (soft counts per place)."""
+    gb, ga = _gray(before).astype(float), _gray(after).astype(float)
+    keys, xy = [], []
+    for w, pts in _places(L).items():
+        for i, q in enumerate(pts):
+            keys.append((w, i))
+            xy.append(q)
+    d = _change(gb, ga, c, xy)
+    t = max(DELTA_MIN, 3 * float(np.median(d)))
+    dv = dict(zip(keys, d))
+    uniq = []
+    for cb in candidates:
+        if list(cb) not in uniq:
+            uniq.append(list(cb))
+    return sorted(((soft_change_cost(dv, t, L, board, cb), cb) for cb in uniq), key=lambda x: x[0])
+
+
 def closest_by_change(before, after, c, L, board, candidates):
     """(best board, cost, margin) out of candidates, judged only by what changed since the
     `before` photo of `board`. margin = cost of the second best minus the best."""
