@@ -108,7 +108,8 @@ class Game:
                     "off": [own_off, opp_off], "pips": rules.pips(self.board), "winner": self.winner,
                     "has_photo": self.photo is not None, "photo_t": getattr(self, "photo_t", 0),
                     "pieces": self.pieces(), "labels": self.labels(), "seen": self.seen,
-                    "bar_y": round(self.L._row_y(6), 1), "frame": self.frame()}
+                    "bar_y": round(self.L._row_y(6), 1), "frame": self.frame(),
+                    "colours": getattr(self, "side_colours", None)}
 
     def frame(self):
         """Picture frame mm -> magnet mm (= the corrected photo's axes) as a 2x3 matrix, for the page."""
@@ -585,6 +586,22 @@ class Game:
         self.ex.set_from_reading(r) if r.board == rules.OPENING else self.ex.set_from_board(rules.OPENING)
         with self.lock:
             self.board = list(rules.OPENING)
+        self.find_side_colours()
+
+    def find_side_colours(self):
+        """What the robot's and the person's checkers really look like (from the opening photo), so the
+        page draws the board in the same colours."""
+        if self.is_sim or getattr(self, "last_img", None) is None:
+            return
+        try:
+            col = vision.side_colours(self.last_img, self.c, self.L, rules.OPENING)
+        except Exception as e:   # never lose the game over a colour
+            self.log_fn(f"side colours: {e}")
+            return
+        if col:
+            self.log_fn(f"side colours: robot {col['robot']} / you {col['human']}")
+            with self.lock:
+                self.side_colours = col
 
     def play(self):
         self.setup()
