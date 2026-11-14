@@ -304,6 +304,8 @@ class Collector:
         if self.auto:
             return default
         ui.show(WIN, ui.with_bar(view, lines))
+        for _ in range(30):       # a key pressed earlier (the Enter of a terminal question) is not an answer
+            cv2.waitKey(10)
         while True:
             k = cv2.waitKey(50) & 0xFF
             ch = "\r" if k in (13, 10) else chr(k).lower() if k < 128 else ""   # Caps Lock does not matter
