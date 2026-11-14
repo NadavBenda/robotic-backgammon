@@ -193,6 +193,13 @@ class MLP:
     def dump(self):
         return {k: getattr(self, k).tolist() for k in ("W1", "b1", "W2", "b2", "mu", "sd")}
 
+    @classmethod
+    def from_dict(cls, d):
+        m = cls.__new__(cls)
+        for k, val in d.items():
+            setattr(m, k, np.asarray(val, float))
+        return m
+
 
 def split(samples, share=0.15):
     """(learn, check): the last share of the photos are kept apart to tell when to stop.
@@ -204,13 +211,6 @@ def split(samples, share=0.15):
     while 0 < k < n and samples[k][1] is samples[k - 1][1]:   # same photo's labels
         k += 1
     return samples[:k], samples[k:]
-
-    @classmethod
-    def from_dict(cls, d):
-        m = cls.__new__(cls)
-        for k, val in d.items():
-            setattr(m, k, np.asarray(val, float))
-        return m
 
 
 class Detector:

@@ -114,7 +114,23 @@ def step_aside(x, y, args):
     return ax, ay
 
 
+HOT = 60   # % of the magnet's heat budget (60 s on, board.ino). Above it a long drag can run out of
+           # budget halfway and the board cuts the magnet mid-drag (! MAG_TIMEOUT, checker dropped).
+
+
 def magnet_on(b):
+    try:
+        heat = b.status().get("HEAT", 0)
+    except Exception:
+        heat = 0
+    if heat > HOT:
+        print(f"   magnet warm ({heat}%), cooling down before the next drag...")
+        while heat > HOT - 20:
+            time.sleep(5)
+            try:
+                heat = b.status().get("HEAT", 0)
+            except Exception:
+                break
     while True:
         try:
             b.magnet(True)
