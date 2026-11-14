@@ -5,7 +5,8 @@
 
   1. Put the checkers in the trays (place_trays.py shows you where).
   2. Enter = start    q = stop
-  3. The robot drags them one by one (around the others), then parks and takes a photo.
+  3. The robot drags them one by one (around the others): the columns farthest from the
+     trays first, and in each column the checker at the edge first, then parks and takes a photo.
      With detector.json (train_detector.py) it reads the photo and says what, if
      anything, is not where it should be: push that one by hand, or press Arrange on the
      game page.
@@ -19,13 +20,31 @@ import ui
 from place_opening import ALL_OUT
 
 
+def order(L, board, frm):
+    """The places of `board` in the order a person fills them (Nadav 14.11): the columns
+    farthest from where the checkers come from first, and in each column from the edge
+    of the board inward (the bottom checker first)."""
+    src = [xy for xy, _ in L.place(frm).values()]
+    sy = float(sum(y for _, y in src)) / max(1, len(src))
+    items = sorted(L.place(board).items(), key=lambda kv: (-abs(kv[1][0][1] - sy), str(kv[0][0]), kv[0][1]))
+    return [(where, i, xy, side) for (where, i), (xy, side) in items]
+
+
 def arrange(b, L, frm, to, log=print):
     """Drag every checker from the board `frm` (where they are, at their exact places) to
-    the board `to`. Returns the executor (its warnings) and the number of drags."""
+    the board `to`, in order(). Returns the executor (its warnings) and the number of drags."""
     from executor import Executor
     ex = Executor(b, L, log=lambda *a: None)
     ex.set_from_board(frm)
-    n = ex.arrange(to, park=L.park())
+    n = 0
+    for where, i, xy, side in order(L, to, frm):
+        src = [k for k in ex.places if str(k).endswith(side) and not isinstance(k, int) and ex.places[k]]
+        if not src:
+            log(f"   no {side} checker left to put on {where}")
+            continue
+        ex.move_checker(src[0], where, side, goal=tuple(xy))
+        n += 1
+    ex.park(L.park())
     for w in ex.warnings:
         log("   warning: " + w)
     return ex, n
