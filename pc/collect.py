@@ -304,6 +304,8 @@ class Collector:
         if self.auto:
             return default
         ui.show(WIN, ui.with_bar(view, lines))
+        for _ in range(30):       # a key pressed earlier (the Enter of a terminal question) is not an answer
+            cv2.waitKey(10)
         while True:
             k = cv2.waitKey(50) & 0xFF
             ch = "\r" if k in (13, 10) else chr(k).lower() if k < 128 else ""   # Caps Lock does not matter
@@ -456,11 +458,14 @@ class Collector:
 
     # -- steps ----------------------------------------------------------------
     def empty_board(self):
-        img = self.photo()
-        k = self.key(img if self.auto else self.drawing(img),
-                     ["Empty board: take every checker off the glass, then Enter",
-                      "s = skip (empty photos already taken today)"], "\rs", "s")
-        if k == "s":
+        """True when the empty-board photos were taken. Asked in the terminal (not with a key
+        in the picture window, which a Hebrew keyboard or Caps Lock can miss)."""
+        if self.auto:
+            return False
+        ui.show(WIN, ui.with_bar(self.drawing(self.photo()), ["Answer in the black terminal window"]))
+        cv2.waitKey(1)
+        a = input("Photos of the empty board? Enter = no (skip them).  y = yes (take every checker off the glass first): ").strip().lower()
+        if a not in ("y", "yes", "כן", "ט"):
             return False
         for i in range(2):
             self.save(self.photo(), f"empty_{i}.jpg")
@@ -683,8 +688,8 @@ def main():
             col = Collector(b, c, L, folder, log=log)
             state = moving = None
             if not col.empty_board() and STATE.exists():
-                k = col.key(col.photo(), ["Are the checkers where the last run left them?",
-                                          "Enter = yes   o = no, I will set up the opening"], "\ro", "o")
+                a = input("Are the checkers where the last run left them? Enter = yes.  o = no, I will set up the opening: ").strip()
+                k = "\r" if not a else "o"
                 if k == "\r":
                     saved = json.loads(STATE.read_text())
                     state, moving = saved["checkers"], saved.get("moving")
