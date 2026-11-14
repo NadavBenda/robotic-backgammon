@@ -56,7 +56,7 @@ table{width:100%;border-collapse:collapse;font-size:13px}td{padding:3px 4px;bord
   <h1>AI-bg <span class="mute" id="sim"></span></h1>
   <div id="prompt">…</div>
   <div id="asks"></div>
-  <div class="stats"><span id="turn"></span><span id="pips"></span><span id="offs"></span></div>
+  <div class="stats"><b id="turn"></b><span id="pips"></span><span id="offs"></span></div>
   <div id="coach" class="mute"></div>
   <div id="warns"></div>
   <svg id="board" viewBox="-34 -20 478 490"></svg>
@@ -64,12 +64,13 @@ table{width:100%;border-collapse:collapse;font-size:13px}td{padding:3px 4px;bord
   White = robot, red = you.</div>
 </section>
 <section style="display:grid;gap:16px;align-content:start">
-  <div class="card"><h1>Settings</h1><div class="mute">Used from the next New game.</div>
-   <div class="grid" id="settings" style="margin-top:8px"></div></div>
-  <div class="card"><h1>Moves</h1><table id="hist"></table></div>
-  <div class="card"><h1>Camera</h1><div class="mute">Last photo, circles = checkers found.
-   Below: the same photo straightened to a view from above (1 px = 1 mm).</div>
-   <img id="photo" alt="top view"><img id="top" class="photo2" alt="raw photo"></div>
+  <div class="card"><h1>What the camera sees</h1><div class="mute">The board from above, circles = checkers found.</div>
+   <img id="photo" alt="top view">
+   <details style="margin-top:8px"><summary class="mute">Original camera photo</summary>
+    <img id="top" class="photo2" alt="raw photo"></details></div>
+  <details class="card"><summary class="mute">Settings (used from the next New game)</summary>
+   <div class="grid" id="settings" style="margin-top:8px"></div></details>
+  <table id="hist" hidden></table>
 </section></main>
 <script>
 const OPTS={mode:["robot_vs_human","robot_vs_robot","watch"],engine:["gnubg","simple","random"],
@@ -152,9 +153,10 @@ function render(s){S=s;if(!built){buildSettings(s.settings);built=true}
     a.append(sel,el("button",{text:"Play this",onclick:()=>post({name:"move",value:sel.value})}))}
    else a.append(el("button",{text:BTN[k]||k,onclick:()=>post({name:k})}))}
   a.append(el("button",{class:"sec",text:"New game",onclick:()=>post({name:"new"})}))}
- document.getElementById("turn").textContent=s.turn?("Turn: "+s.turn):"";
- document.getElementById("pips").textContent=`Pips robot ${s.pips[0]} · you ${s.pips[1]}`;
- document.getElementById("offs").textContent=`Off robot ${s.off[0]} · you ${s.off[1]}`;
+ document.getElementById("turn").textContent=s.winner?"":(s.turn==="robot"?"🤖 Robot's turn":s.turn?"🙂 Your turn":"");
+ const ahead=s.pips[0]===s.pips[1]?"even race":(s.pips[0]<s.pips[1]?"robot is ahead":"you are ahead");
+ document.getElementById("pips").textContent=`Steps left to finish: robot ${s.pips[0]}, you ${s.pips[1]} (${ahead})`;
+ document.getElementById("offs").textContent=(s.off[0]||s.off[1])?`Taken off: robot ${s.off[0]}/15, you ${s.off[1]}/15`:"";
  document.getElementById("coach").textContent=s.coach||"";
  const w=document.getElementById("warns");w.innerHTML="";for(const t of s.warnings)w.append(el("div",{class:"warn",text:"⚠ "+t}));
  if(s.asks.includes("edit")&&s.seen){if(!ED)ED=s.seen.slice();drawEdit(s)}else{ED=null;drawBoard(s)}
