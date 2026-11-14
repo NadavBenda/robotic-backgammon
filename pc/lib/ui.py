@@ -88,3 +88,35 @@ def draw_bottom(view, to_mm, to_px, u, v, color=(0, 255, 0), dy=0, thick=2):
     pts[..., 1] += dy
     cv2.polylines(view, [pts], True, color, thick, cv2.LINE_AA)
     cv2.drawMarker(view, (int(u), int(v) + dy), color, cv2.MARKER_CROSS, 16, 1)
+
+
+def term_key():
+    """A key pressed in the black terminal window (Windows), or '' if none. After a question
+    asked in the terminal the keyboard stays there, so a window that waits for a key also
+    takes it from the terminal (Nadav 14.11: Enter to start was not seen)."""
+    if sys.platform != "win32":
+        return ""
+    import msvcrt
+    if not msvcrt.kbhit():
+        return ""
+    ch = msvcrt.getwch()
+    if ch in ("\x00", "\xe0"):   # arrow / function key: two codes, ignore
+        msvcrt.getwch()
+        return ""
+    return "\r" if ch in ("\r", "\n") else ch.lower()
+
+
+def drain_keys():
+    """Forget keys pressed before (in the window and in the terminal)."""
+    for _ in range(30):
+        cv2.waitKey(10)
+    while term_key():
+        pass
+
+
+def wait_char(delay_ms=50):
+    """One key from the photo window or the terminal, '' if none within delay_ms."""
+    k = cv2.waitKey(delay_ms) & 0xFF
+    if k != 0xFF:
+        return "\r" if k in (13, 10) else chr(k).lower() if k < 128 else ""   # Caps Lock does not matter
+    return term_key()
