@@ -306,7 +306,7 @@ class Collector:
         ui.show(WIN, ui.with_bar(view, lines))
         while True:
             k = cv2.waitKey(50) & 0xFF
-            ch = "\r" if k in (13, 10) else chr(k) if k < 128 else ""
+            ch = "\r" if k in (13, 10) else chr(k).lower() if k < 128 else ""   # Caps Lock does not matter
             if ch in keys:
                 return ch
 
@@ -315,7 +315,7 @@ class Collector:
         if self.auto:
             return False
         ui.show(WIN, ui.with_bar(view, lines))
-        return (cv2.waitKey(30) & 0xFF) == ord("q")
+        return (cv2.waitKey(30) & 0xFF) in (ord("q"), ord("Q"))
 
     def check(self, img, why, mark=None, seen=None, moved=None, arrow=None):
         """Ask until the photo matches the drawing. Returns the photo to keep, or None (stop).
