@@ -13,6 +13,8 @@ Talks to `firmware/board` over USB serial (no Wi-Fi). Needs `pip install pyseria
 | `calibrate.py` | camera calibration (`test` mode: click -> the magnet goes there) |
 | `teach_layout.py` | fit the board map to the real board in 4 clicks |
 | `place_opening.py` | set up the opening position with the cart showing where |
+| `place_trays.py` | put all 30 checkers in the bear-off trays, the cart showing where |
+| `arrange_opening.py` | the robot sets up the opening from the trays by itself |
 | `collect.py` | labelled photos for checker detection: the robot moves checkers (columns, bar, bear-off trays; mostly where the dataset is thin) and photographs each position (saved in dataset/, not uploaded) |
 | `train_detector.py` | teaches the learned checker detector from those photos, compares it with norm, saves detector.json (used only when vision = learned) |
 | `move.py` | move single checkers by clicking, with planned paths |

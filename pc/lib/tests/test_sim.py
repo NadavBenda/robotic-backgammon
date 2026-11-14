@@ -194,6 +194,24 @@ def test_collect_crash_is_logged():
     assert col2.start(state=saved["checkers"], moving=saved["moving"])
 
 
+def test_arrange_opening_from_the_trays():
+    """arrange_opening.py: all 30 checkers from the bear-off trays to the opening."""
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    import arrange_opening
+    from place_opening import ALL_OUT
+    L = Layout.load()
+    b = SimBoard.with_board(ALL_OUT, L, seed=1)
+
+    def placed(board):
+        truth = b.checkers()
+        return all(any(np.hypot(c[0] - xy[0], c[1] - xy[1]) < 6 and c[2] == s for c in truth)
+                   for xy, s in L.place(board).values())
+    assert placed(ALL_OUT)
+    ex, n = arrange_opening.arrange(b, L, ALL_OUT, rules.OPENING, log=lambda *a: None)
+    assert n == 30 and b.bumps == 0 and placed(rules.OPENING), (n, b.bumps, ex.warnings)
+
+
 if __name__ == "__main__":
     for k, f in list(globals().items()):
         if k.startswith("test_"):
