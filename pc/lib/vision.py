@@ -583,15 +583,19 @@ def anchor(r, board, changed):
     return out
 
 
-def soft_change_cost(dv, t, L, b0, b1):
+def soft_change_cost(dv, t, L, b0, b1, ignore=()):
     """change_cost with soft counts (the "depressive" reading, Nadav 14.11): a slot counts
     as clip(d / t - 0.5, 0, 1) changed, so a checker put a little off its line, which half
-    changes a neighbouring slot, costs a fraction instead of a whole mismatch."""
-    exp = _expected(L, b0, b1)
+    changes a neighbouring slot, costs a fraction instead of a whole mismatch.
+    ignore: places that are not judged at all (the bear-off trays: a person may take the
+    checkers off the glass altogether, Nadav 15.11)."""
+    exp = {k for k in _expected(L, b0, b1) if k[0] not in ignore}
     p0, p1 = L.place(b0), L.place(b1)
     at = [L.slot(w, i) for w, i in exp]
     seen, want = {}, {}
     for (w, i), d in dv.items():
+        if w in ignore:
+            continue
         s = min(1.0, max(0.0, d / t - 0.5))
         if s and (w, i) not in p0 and (w, i) not in p1 and any(
                 np.hypot(*np.subtract(L.slot(w, i), q)) < L.checker for q in at):
@@ -602,9 +606,9 @@ def soft_change_cost(dv, t, L, b0, b1):
     return float(sum(abs(seen.get(w, 0.0) - want.get(w, 0)) for w in set(seen) | set(want)))
 
 
-def rank_by_change(before, after, c, L, board, candidates):
+def rank_by_change(before, after, c, L, board, candidates, ignore=()):
     """[(cost, board)] every distinct candidate, best first, judged only by what changed
-    between the two photos (soft counts per place)."""
+    between the two photos (soft counts per place; the places in ignore are not judged)."""
     gb, ga = _gray(before).astype(float), _gray(after).astype(float)
     keys, xy = [], []
     for w, pts in _places(L).items():
@@ -618,7 +622,7 @@ def rank_by_change(before, after, c, L, board, candidates):
     for cb in candidates:
         if list(cb) not in uniq:
             uniq.append(list(cb))
-    return sorted(((soft_change_cost(dv, t, L, board, cb), cb) for cb in uniq), key=lambda x: x[0])
+    return sorted(((soft_change_cost(dv, t, L, board, cb, ignore), cb) for cb in uniq), key=lambda x: x[0])
 
 
 def closest_by_change(before, after, c, L, board, candidates):

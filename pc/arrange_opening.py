@@ -40,11 +40,12 @@ def outer_first(L, xy):
     return (0 if d < 30 else 1, round(y / 10.0), d)
 
 
-def arrange(b, L, frm, to, log=print):
+def arrange(b, L, frm, to, log=print, ex=None):
     """Drag every checker from the board `frm` (where they are, at their exact places) to
-    the board `to`, in order(). Returns the executor (its warnings) and the number of drags."""
+    the board `to`, in order(). Returns the executor (its warnings) and the number of drags.
+    ex: an executor to use (the game's own, so its page shows the drags)."""
     from executor import Executor
-    ex = Executor(b, L, log=lambda *a: None)
+    ex = ex or Executor(b, L, log=lambda *a: None)
     ex.set_from_board(frm)
     n = 0
     for where, i, xy, side in order(L, to, frm):

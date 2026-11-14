@@ -11,18 +11,22 @@ Everything is chosen on the page (Settings), not with flags:
   Engine    gnubg (strong, ~1 s) -> simple (built in, weak) if gnubg is missing -> random
   Dice      digital (the PC rolls) / typed (real dice, you type them) / camera (real dice
             in the dice zone, read from below; you can correct it)
-  Your move by hand + "Done" button / by hand + automatic (the robot watches until the
-            board shows a legal move and stays still) / pick it on the page and the robot
-            moves your checkers (remote play, or nobody wants to touch the board)
-  Vision    norm (default, measured on the real board 12.11) / scan / slots / hough  (see vision.py)
+  Your move by hand + "Done" button / pick it on the page and the robot moves your
+            checkers (remote play, or nobody wants to touch the board)
 
-How a human move is read (the "depressive" reading, Nadav 14.11): park the magnet in the
-lane, photo, compare with the photo before the move (vision.rank_by_change). Every legal
-result of the roll gets a cost: how far what changed is from what that move changes (soft
-counts per place, so a checker a little off its line costs a fraction). The best is taken
-only when its cost <= CHANGE_OK and the next one is at least CHANGE_MARGIN worse; otherwise
-the page asks, with the most likely moves first (or fix the checkers and read again, or
-fix the board on the page). The detector is used only when there is no photo before.
+The game never looks for checkers in the photo (Nadav 15.11). It starts from the opening
+position (you set it up and press Start, or the robot arranges it from the trays) and from
+then on only updates the known board with every move:
+  the robot's move   is taken as carried out (no check, no stop).
+  a person's move    the "depressive" reading (Nadav 14.11): park the magnet, photo,
+                     compare with the photo before the move (vision.rank_by_change). Every
+                     legal result of the roll gets a cost: how far what changed is from what
+                     that move changes (soft counts per place; the bear-off trays are not
+                     judged, so checkers may leave the glass). The best is taken only when
+                     its cost <= CHANGE_OK and the next one is at least CHANGE_MARGIN worse;
+                     otherwise the page asks, the most likely moves first (or fix the
+                     checkers and read again, or fix the board on the page).
+The drawn board and the circles on the camera's picture are the same known board.
 Every game has its own folder: games/<date-time>/game.jsonl (one line per turn) and the
 photos next to it, every one kept: 000_move00.jpg, 001_move00.jpg, 002_move01.jpg, ...
 (running number + how many moves were played). The folder appears at the first move.
@@ -50,15 +54,21 @@ from gnubg import BAR, OFF, Step  # noqa: F401
 from layout import Layout
 
 GAMES = Path(__file__).parent / "games"
-CHANGE_OK = 2.0       # the depressive reading takes a move only if it explains the photos this well
+# The depressive reading takes a move only if it explains the photos this well ... (3 games on
+# 14-15.11, 33 moves: the read ones were <= 2.0; of the 6 stops the right move was always first,
+# three of them at 2.2-3.0 with the next one 2+ behind, so 2.0 -> 3.5, Nadav 15.11)
+CHANGE_OK = 3.5
 CHANGE_MARGIN = 1.0   # ... and the next legal move is at least this much worse (else: ask)
+TRAYS = ("off_robot", "off_human")   # not judged: a person may take checkers off the glass altogether
+ROBOT_FIT_WARN = 6.0  # the photo after a robot move fits it worse than this: a quiet note at the bottom
+NO_MOVE_S = 2.5       # how long "no legal move" stays on the page when the robot cannot play
+ALL_OUT = [0] * 26    # every checker in the bear-off trays (as place_trays.py leaves them)
 
 DEFAULTS = {
     "mode": "robot_vs_human",    # robot_vs_human | robot_vs_robot | watch
     "engine": "gnubg",           # gnubg | simple | random
     "dice": "digital",           # digital | typed | camera
-    "human_move": "done_button",  # done_button | auto | robot_moves
-    "vision": "learned",         # learned (detector.json from train_detector.py; decided 14.11) | norm | cnn | both | scan | slots | hough
+    "human_move": "done_button",  # done_button | robot_moves
     "coach": False,              # watch / human turns: show gnubg's choice
     "first": "human",            # human (always, Nadav 14.11) | robot | roll (opening roll)
     "board": "auto",             # auto (real, else simulator) | real | sim
@@ -69,18 +79,29 @@ class Restart(Exception):
     pass
 
 
+class _Upside:
+    """A top view's pixel map (calib.Flat) for the same picture turned upside down."""
+
+    def __init__(self, f, height):
+        self.f, self.h, self.k = f, height, f.k
+
+    def mm_to_px(self, x, y):
+        u, v = self.f.mm_to_px(x, y)
+        return u, self.h - 1 - np.asarray(v, float)
+
+
 class Game:
     def __init__(self, settings=None, log=print):
-        self.s = dict(DEFAULTS, **(settings or {}))
+        self.s = dict(DEFAULTS, **{k: v for k, v in (settings or {}).items() if k in DEFAULTS})
         self.inbox = queue.Queue()
-        self.swap_colours = False   # the page's swap button (circles on the photo follow it)
+        self.robot_white = False    # whose checkers are the white ones (found at the opening; the page's swap button turns it)
+        self.busy = False           # the game is working (not waiting for a click): the page shows it
         self.lock = threading.Lock()
         self.log_fn = log
         self.L = Layout.load()
         self.b = None
         self.c = None
         self.is_sim = False
-        self.model = None
         self.ex = None
         self.reset_state()
 
@@ -91,32 +112,51 @@ class Game:
         self.dice = None
         self.phase = "idle"
         self.prompt = "Press New game"
+        self.info = ""                     # the small line under the board (what the robot played)
         self.asks = []                     # buttons the page should show
         self.legal = []                    # [(text)] for the move picker
+        self.likely = []                   # the most likely moves, when the reading is not sure
         self.history = []
         self.warnings = []
         self.coach = None
-        self.photo = None                  # jpeg bytes with what vision found
-        self.last_read = None              # (photo, reading) behind self.photo, redrawn on a colour swap
-        self.last_img = None               # the last photo (of the board as it was known), for reading by change
-        self.seen = None                   # the board the camera read last (the page can edit it)
+        self.photo = None                  # jpeg bytes: the camera photo (shown upside down, like the drawing)
+        self.photo_top = None              # jpeg bytes: the top view with the known board circled
+        self.top_base = None               # the top view before anything is drawn on it
+        self.marks = []                    # [((x, y), side)] the known checkers circled on the top view
+        self.paths = []                    # the robot's drag paths of this turn (magnet mm), drawn on the page
+        self.last_img = None               # the last photo (of the board as it is known), for reading by change
         self.winner = None
         self.logfile = None
         self.shots = []                    # photos taken before the first move (the folder is made then)
         self.shot_n = 0                    # running number of the game's photos
 
+    def name(self, side):
+        mode = self.s["mode"]
+        if mode == "robot_vs_robot":
+            return "Robot A" if side == "robot" else "Robot B"
+        if mode == "watch":
+            return "Player 1" if side == "robot" else "Player 2"
+        return "Robot" if side == "robot" else "You"
+
+    def players(self):
+        mode = self.s["mode"]
+        return {"robot": {"name": self.name("robot"), "kind": "person" if mode == "watch" else "computer"},
+                "human": {"name": self.name("human"), "kind": "computer" if mode == "robot_vs_robot" else "person"}}
+
     def snapshot(self):
         with self.lock:
             own_off, opp_off = rules.off_count(self.board)
             return {"board": self.board, "turn": self.turn, "dice": self.dice, "phase": self.phase,
-                    "prompt": self.prompt, "asks": self.asks, "legal": self.legal[:400],
+                    "prompt": self.prompt, "info": self.info, "asks": self.asks, "legal": self.legal[:400],
+                    "likely": self.likely, "busy": self.busy,
                     "history": self.history[-40:], "warnings": self.warnings[-6:],
                     "coach": self.coach, "settings": self.s, "sim": self.is_sim,
                     "off": [own_off, opp_off], "pips": rules.pips(self.board), "winner": self.winner,
                     "has_photo": self.photo is not None, "photo_t": getattr(self, "photo_t", 0),
-                    "pieces": self.pieces(), "labels": self.labels(), "seen": self.seen,
+                    "pieces": self.pieces(), "labels": self.labels(), "seen": self.board,
                     "bar_y": round(self.L._row_y(6), 1), "frame": self.frame(),
-                    "colours": getattr(self, "side_colours", None), "swap": self.swap_colours}
+                    "paths": [[[round(x, 1), round(y, 1)] for x, y in p] for p in self.paths],
+                    "players": self.players(), "robot_white": self.robot_white}
 
     def frame(self):
         """Picture frame mm -> magnet mm (= the corrected photo's axes) as a 2x3 matrix, for the page."""
@@ -124,12 +164,28 @@ class Game:
         return [[round(ex[0] - o[0], 6), round(ey[0] - o[0], 6), round(o[0], 3)],
                 [round(ex[1] - o[1], 6), round(ey[1] - o[1], 6), round(o[1], 3)]]
 
+    def where(self):
+        """[((x, y) magnet mm, side)] every checker of the known board: where the robot left the
+        ones it moved (so the page follows a move checker by checker), the layout's places otherwise."""
+        ex = self.ex
+        if ex is not None and ex.places:
+            try:
+                out = []
+                for key, lst in list(ex.places.items()):
+                    side = (ex.side_of.get(key) if isinstance(key, int)
+                            else key.split("_")[1] if key.startswith(("bar_", "off_")) else self.turn)
+                    out += [((float(x), float(y)), side or "robot") for x, y in list(lst)]
+                return out
+            except Exception:   # the game thread changed it meanwhile: the plain board will do
+                pass
+        return [((float(xy[0]), float(xy[1])), side) for xy, side in self.L.place(self.board).values()]
+
     def pieces(self):
         """Checkers in the picture frame (x right, y from the near side), for the page."""
         out = []
-        for (where, i), (xy, side) in self.L.place(self.board).items():
-            x, y = self.L._nominal(where, i)
-            out.append([round(x, 1), round(y, 1), side])
+        for (x, y), side in self.where():
+            fx, fy = self.L.from_magnet(x, y)
+            out.append([round(fx, 1), round(fy, 1), side])
         return out
 
     def labels(self):
@@ -140,13 +196,15 @@ class Game:
             out.append([round(x, 1), round(y, 1), 25 - p])
         return out
 
-    def say(self, prompt, phase=None, asks=()):
+    def say(self, prompt, phase=None, asks=(), info=None):
         with self.lock:
             self.prompt = prompt
             if phase:
                 self.phase = phase
+            if info is not None:
+                self.info = info
             self.asks = list(asks)
-        self.log_fn(f"[{self.phase}] {prompt}")
+        self.log_fn(f"[{self.phase}] {prompt}" + (f"  ({info})" if info else ""))
 
     def warn(self, text):
         with self.lock:
@@ -155,10 +213,10 @@ class Game:
 
     # -- inbox: actions from the page / terminal ----------------------------
     def post(self, action):
-        """action: {'name': 'new' | 'done' | 'dice' | 'accept' | 'reread' | 'closest' |
-        'move' | 'settings' | 'learn' | 'stop', ...}"""
-        if action.get("name") == "swap_colours":   # the page's swap button: the photo circles too
-            self.swap_colours = bool(action.get("value"))
+        """action: {'name': 'new' | 'start' | 'arrange' | 'done' | 'dice' | 'rolled' | 'accept' |
+        'reread' | 'move' | 'board' | 'settings' | 'swap_colours' | 'stop', ...}"""
+        if action.get("name") == "swap_colours":   # the page's swap button: whose checkers are white
+            self.robot_white = not self.robot_white
             self.redraw()
             return
         if action.get("name") == "settings":
@@ -183,17 +241,21 @@ class Game:
     def wait(self, *names, timeout=None):
         """Next action whose name is in names. 'new' / 'stop' always interrupt."""
         end = None if timeout is None else time.time() + timeout
-        while True:
-            left = None if end is None else max(0.0, end - time.time())
-            try:
-                a = self.inbox.get(timeout=left)
-            except queue.Empty:
-                return None
-            if a["name"] in ("new", "stop"):
-                self.inbox.put(a)
-                raise Restart()
-            if a["name"] in names:
-                return a
+        self.busy = False
+        try:
+            while True:
+                left = None if end is None else max(0.0, end - time.time())
+                try:
+                    a = self.inbox.get(timeout=left)
+                except queue.Empty:
+                    return None
+                if a["name"] in ("new", "stop"):
+                    self.inbox.put(a)
+                    raise Restart()
+                if a["name"] in names:
+                    return a
+        finally:
+            self.busy = True
 
     # -- hardware ---------------------------------------------------------------
     def connect(self):
@@ -215,15 +277,21 @@ class Game:
                 self.log_fn(f"Real board not available ({e}); using the simulator.")
                 self.b = None
         if self.b is None:
-            from sim import SimBoard
-            self.b = SimBoard.with_board(rules.OPENING, self.L, noise_mm=0.5)
-            self.c = self.b.calib
-            self.is_sim = True
-            import paths
-            paths.GRAB_S = 0.0
+            self.sim_board(rules.OPENING)
+        self.new_executor()
+
+    def sim_board(self, board):
+        from sim import SimBoard
+        self.b = SimBoard.with_board(board, self.L, noise_mm=0.5)
+        self.c = self.b.calib
+        self.is_sim = True
+        import paths
+        paths.GRAB_S = 0.0
+
+    def new_executor(self):
         from executor import Executor
-        self.ex = Executor(self.b, self.L, log=self.log_fn,
-                           grab_s=0.0 if self.is_sim else 0.3)
+        self.ex = Executor(self.b, self.L, log=self.log_fn, grab_s=0.0 if self.is_sim else 0.3)
+        self.ex.on_path = self.show_path
 
     def photo_img(self):
         if getattr(self, "ex", None) is not None:
@@ -237,26 +305,51 @@ class Game:
         self.c.check(img)   # calib.json made for another camera resolution: say so plainly
         return img
 
-    def redraw(self):
-        """The page's photos: the last one with every checker found circled (robot green,
-        person orange; swapped when the page's swap button is on)."""
-        if not getattr(self, "last_read", None):
-            return
-        img, r = self.last_read
-        view = vision.draw(img, self.c, r, swap=self.swap_colours)
-        import calib
-        top = calib.view(view, self.c, xmax=self.L.xmax, ymax=self.L.ymax)[0]
+    def show_path(self, path):
+        """The executor is about to drag a checker along path: draw it on the page (like collect)."""
         with self.lock:
-            self.photo = cv2.imencode(".jpg", view)[1].tobytes()
-            self.photo_top = cv2.imencode(".jpg", top)[1].tobytes()
+            self.paths = self.paths[-7:] + [[(float(x), float(y)) for x, y in path]]
+        self.redraw()
+
+    def mark(self):
+        """Circle the known board on the camera's picture (no checker is looked for in the photo)."""
+        self.marks = self.where()
+        self.redraw()
+
+    def redraw(self):
+        """The page's pictures. Top view, upside down like the drawing (the numbers drawn after
+        the turn, so they read the right way): every checker of the known board circled in its
+        own colour (black / white) and the robot's drag paths of this turn in yellow."""
+        if self.top_base is None:
+            return
+        import calib
+        top = self.top_base.copy()
+        f = _Upside(calib.Flat(self.c), top.shape[0])
+        px = lambda xy: tuple(int(round(float(t))) for t in f.mm_to_px(*xy))  # noqa: E731
+        r = int(round(self.L.checker / 2 * f.k))
+        white, black = (240, 242, 242), (24, 24, 24)
+        for xy, side in self.marks:
+            is_white = (side == "robot") == self.robot_white
+            cv2.circle(top, px(xy), r, black if is_white else white, 5, cv2.LINE_AA)
+            cv2.circle(top, px(xy), r, white if is_white else black, 3, cv2.LINE_AA)
+        for n, path in enumerate(self.paths):
+            pts = [px(p) for p in path]
+            last = n == len(self.paths) - 1
+            col = (0, 230, 255) if last else (0, 150, 170)
+            if len(pts) > 2:
+                cv2.polylines(top, [np.array(pts[:-1], np.int32)], False, col, 3, cv2.LINE_AA)
+            if len(pts) > 1:
+                cv2.arrowedLine(top, pts[-2], pts[-1], col, 3, cv2.LINE_AA,
+                                tipLength=min(0.5, 18.0 / max(1.0, float(np.hypot(*np.subtract(pts[-1], pts[-2]))))))
+                cv2.circle(top, pts[0], 5, col, -1, cv2.LINE_AA)
+        with self.lock:
+            self.photo_top = cv2.imencode(".jpg", top, [cv2.IMWRITE_JPEG_QUALITY, 88])[1].tobytes()
             self.photo_t = time.time()
 
     def look(self):
-        """Photo + vision. Keeps an annotated copy for the page."""
+        """A photo of the board as it is known: kept in the game's folder, and it becomes the
+        'before' of the next move read by change. Nothing is detected in it."""
         img = self.photo_img()
-        r = vision.read(img, self.c, self.L, self.model, self.s["vision"])
-        self.last_read = (img, r)
-        self.redraw()
         if self.logfile:
             # every photo is kept: its running number + the number of moves played when it was taken
             name = f"{self.shot_n:03d}_move{len(self.history):02d}.jpg"
@@ -264,18 +357,27 @@ class Game:
             self.shots = (self.shots + [(name, cv2.imencode(".jpg", img)[1])])[-6:]
             self.flush_shots()
         self.last_img = img
+        import calib
+        top, f = calib.view(img, self.c, xmax=self.L.xmax, ymax=self.L.ymax, board=False)
+        top = cv2.flip(top, 0)
+        try:
+            top = calib.draw_board(top, _Upside(f, top.shape[0]), self.L)
+        except Exception:   # never lose the photo over the drawing
+            pass
         with self.lock:
-            self.seen = list(r.board) if r.board else list(self.board)
-        return r, img
+            self.top_base = top
+            self.paths = []
+            self.photo = cv2.imencode(".jpg", cv2.flip(img, 0))[1].tobytes()
+        self.mark()
+        return img
 
-    def learn_colours(self):
-        """Learn checker colours from the opening position (or load the saved model)."""
-        img = self.photo_img()
-        self.model = vision.learn(img, self.c, self.L, rules.OPENING)
-        if not self.is_sim:
-            self.model.save()
-        r = vision.read(img, self.c, self.L, self.model, self.s["vision"])
-        return r
+    def set_board(self, board):
+        """The known board after a move that the robot did not carry out itself."""
+        with self.lock:
+            self.board = list(board)
+            self.legal, self.likely = [], []
+        self.ex.set_from_board(board)
+        self.mark()
 
     # -- engine -------------------------------------------------------------------
     def choose(self, board, dice_):
@@ -294,6 +396,7 @@ class Game:
 
     # -- dice -----------------------------------------------------------------------
     def roll(self, who):
+        who = self.name(who)
         how = self.s["dice"]
         if how == "digital":
             d = dice_mod.digital()
@@ -338,9 +441,20 @@ class Game:
                 buf.tofile(str(self.logfile.parent / name))   # works with Hebrew paths
             self.shots = []
 
+    def shown(self, steps, side):
+        """The move in the numbers written on the page's board (the 'human' side's): the 'robot'
+        side's own numbers run the other way (its 24 is the page's 1)."""
+        if steps is None:
+            return "?"
+        if side == "human":
+            return rules.move_text(steps)
+        name = lambda p: "bar" if p == BAR else "off" if p == OFF else str(25 - p)  # noqa: E731
+        return " ".join(f"{name(x.frm)}/{name(x.to)}{'*' if x.hit else ''}" for x in steps)
+
     def record(self, who, d, steps, before, after, note=""):
         txt = rules.move_text(steps) if steps is not None else "?"
         item = {"n": len(self.history) + 1, "who": who, "dice": list(d), "move": txt,
+                "shown": self.shown(steps, who),
                 "board_before": before, "board_after": after, "note": note,
                 "t": datetime.now().isoformat(timespec="seconds")}
         with self.lock:
@@ -352,24 +466,43 @@ class Game:
                 f.write(json.dumps(item) + "\n")
 
     def robot_turn(self, side="robot"):
-        """The robot plays `side` ('robot', or 'human' in robot vs robot / robot_moves)."""
+        """The robot plays `side` ('robot', or 'human' in robot vs robot)."""
         d = self.roll(side)
+        who = self.name(side)
         before = list(self.board)
         view = self.board if side == "robot" else rules.flip(self.board)
         steps, eng = self.choose(view, d)
         if not steps:
-            self.say(f"{side} rolled {d[0]}-{d[1]}: no move", "robot_move")
+            # nothing to play: leave it on the page for a moment before the turn passes (Nadav 15.11)
+            self.say(f"{who}: no legal move", "robot_move", info=f"{who} rolled {d[0]}-{d[1]}: no legal move")
             self.record(side, d, [], self.board, self.board, "no legal move")
+            time.sleep(NO_MOVE_S)
             return
         after_view = self.after(view, d, steps)
-        txt = rules.move_text(steps)
-        self.say(f"{side} rolled {d[0]}-{d[1]}, plays {txt} ({eng})", "robot_move")
+        self.say(f"{who} is playing…", "robot_move",
+                 info=f"{who} rolled {d[0]}-{d[1]}, plays {self.shown(steps, side)} ({eng})")
         self.ex.play(steps, side=side)
         expected = after_view if side == "robot" else rules.flip(after_view)
-        expected = self.check_after_robot(expected)
+        # the robot's move is taken as carried out (Nadav 15.11): no reading, no stop
+        note = self.after_robot(before, expected)
+        self.record(side, d, steps, before, expected, note)
+
+    def after_robot(self, board0, expected):
+        """The known board becomes `expected`; a photo of it (the 'before' of the next move).
+        How well the photos fit the move only goes into the log (and a quiet note if badly)."""
+        last = self.last_img
         with self.lock:
-            self.board = expected
-        self.record(side, d, steps, before, expected)
+            self.board = list(expected)
+        img = self.look()
+        try:
+            fit = vision.rank_by_change(last, img, self.c, self.L, board0, [expected], TRAYS)[0][0]
+        except Exception as e:
+            self.log_fn(f"fit after the robot's move: {e}")
+            return ""
+        if fit > ROBOT_FIT_WARN:
+            self.warn(f"move {len(self.history) + 1}: the photo after the robot's move fits it poorly "
+                      f"({fit:.1f}). The game goes on as if it was carried out; look at the board if it gets stuck")
+        return f"photo fit {fit:.1f}"
 
     def after(self, view, d, steps):
         """Board after steps (mover's view): from the legal move with the same steps."""
@@ -378,54 +511,6 @@ class Game:
                 return list(nb)
         from executor import expected_after
         return expected_after(view, steps)
-
-    def check_after_robot(self, expected):
-        """Photo after a robot move. Returns the board to go on with: expected, or the one
-        fixed on the page (Edit)."""
-        before, board0 = self.last_img, list(self.board)
-        r, img = self.look()
-        if before is not None:   # places that did not change keep the known position
-            r = vision.anchor(r, board0, vision.slot_changes(before, img, self.c, self.L)[0])
-        if r.board == expected:
-            self._set_from(r)
-            return expected
-        if before is not None:   # what changed since the last photo is exactly this move: fine
-            changed, _ = vision.slot_changes(before, img, self.c, self.L)
-            if vision.change_cost(changed, self.L, board0, expected) == 0:
-                self.log_fn("after the robot's move: read by change (the photo matches the move)")
-                self.ex.set_from_board(expected)
-                return expected
-        diff = [i for i in range(26) if r.board[i] != expected[i]]
-        self.warn(f"after the robot's move the camera sees something else at {diff[:6]}"
-                  + (f": {r.warnings[0]}" if r.warnings else ""))
-        self.say("The board does not look as expected. Fix the checkers by hand and press Read again, "
-                 "Accept to go on, or fix the reading on the board below and press Use this board",
-                 "check", ["reread", "accept", "edit"])
-        while True:
-            a = self.wait("reread", "accept", "board")
-            if a["name"] == "accept":
-                self.ex.set_from_board(expected)
-                return expected
-            if a["name"] == "board" and self._valid(a.get("value")):
-                b = [int(v) for v in a["value"]]
-                self.ex.set_from_board(b)
-                if b != expected:
-                    self.warn("board fixed on the page: it differs from the robot's move")
-                return b
-            r, img = self.look()
-            if before is not None:
-                r = vision.anchor(r, board0, vision.slot_changes(before, img, self.c, self.L)[0])
-            if r.board == expected:
-                self._set_from(r)
-                return expected
-
-    def _set_from(self, r):
-        """Where the checkers stand, for the robot's paths: the detector's own positions, or the
-        board's nominal slots when part of the reading came from the known position (anchor)."""
-        if getattr(r, "anchored", None):
-            self.ex.set_from_board(r.board)
-        else:
-            self.ex.set_from_reading(r)
 
     @staticmethod
     def _valid(b):
@@ -439,70 +524,68 @@ class Game:
 
     def human_turn(self, side="human"):
         d = self.roll(side)
+        who = self.name(side)
+        yours = "Your" if who == "You" else who + "'s"
         hv = rules.flip(self.board) if side == "human" else list(self.board)
         plays = rules.legal_moves(hv, d)
         if self.s["coach"]:
             steps, eng = self.choose(hv, d)
             with self.lock:
                 self.coach = f"{eng} would play {rules.move_text(steps)}"
+        self.drain()
         if not plays[0][0]:
-            self.say(f"{side} rolled {d[0]}-{d[1]}: no legal move, turn passes", "human_move")
+            # nothing to play: the person still presses Done, so the turn never passes unseen (Nadav 15.11)
+            self.say(f"No legal move for {d[0]}-{d[1]}. Press Done", "human_move", ["done"])
+            self.wait("done")
             self.record(side, d, [], self.board, self.board, "no legal move")
-            time.sleep(1.5)
             return
         texts = sorted(rules.move_text(s) for s, _ in plays)
         with self.lock:
             self.legal = texts
         to_robot = (lambda nb: rules.flip(nb)) if side == "human" else (lambda nb: list(nb))
         cands = [to_robot(nb) for _, nb in plays]
-        how = self.s["human_move"]
         before = self.last_img   # photo of the board before this move (after the last one)
 
-        if how == "robot_moves":
-            self.drain()
-            self.say(f"{side} rolled {d[0]}-{d[1]}: pick your move", "human_move", ["move_pick"])
+        if self.s["human_move"] == "robot_moves":
+            self.say(f"{yours} turn: pick the move", "human_move", ["move_pick"])
             while True:
                 a = self.wait("move")
                 hit = [(s, nb) for s, nb in plays if rules.move_text(s) == a.get("value")]
                 if hit:
                     break
             steps, nb = hit[0]
+            board0 = list(self.board)
+            with self.lock:
+                self.legal = []
+            self.say(f"The robot moves {yours.lower() if who == 'You' else yours} checkers…", "robot_move",
+                     info=f"{who} rolled {d[0]}-{d[1]}, plays {self.shown(steps, side)} (moved by the robot)")
             self.ex.play(steps, side=side)
-            got = self.check_after_robot(to_robot(nb))
-            self.finish_human(side, d, steps, got, "moved by the robot")
+            note = self.after_robot(board0, to_robot(nb))
+            self.record(side, d, steps, board0, to_robot(nb), ("moved by the robot; " + note).rstrip("; "))
             return
 
-        self.drain()
         if self.is_sim:   # nobody's hand in the simulator: the page's picker moves "by hand"
-            self.say(f"{side} rolled {d[0]}-{d[1]}. Simulator: pick the move the 'person' makes "
-                     "(sloppy, by hand), then Done", "human_move", ["move_pick", "done"])
+            self.say(f"{yours} turn (simulator): pick the move, then Done", "human_move", ["move_pick", "done"])
         else:
-            self.say(f"{side} rolled {d[0]}-{d[1]}. Move your checkers, then press Done"
-                     + (" (or just wait: auto)" if how == "auto" else ""), "human_move", ["done"])
-        if how == "auto" and not self.is_sim:
-            r = self.wait_still(cands)
-        else:
-            while True:
-                a = self.wait("done", "move")
-                if a["name"] == "move" and self.is_sim:
-                    self.sim_hand_move(hv, d, a.get("value"), side)
-                    continue
-                if a["name"] == "done":
-                    break
-            r, _ = self.look()
-        if before is not None and self.last_img is not before:
-            if self.read_by_change(before, cands, plays, d, side, to_robot):
-                return
-        self.accept_reading(r, cands, plays, hv, d, side, to_robot, before)
+            self.say(f"{yours} turn", "human_move", ["done"])
+        while True:
+            a = self.wait("done", "move")
+            if a["name"] == "move" and self.is_sim:
+                self.sim_hand_move(hv, d, a.get("value"), side)
+                continue
+            if a["name"] == "done":
+                break
+        self.say("Reading the move…", "reading")
+        self.look()
+        self.read_by_change(before, cands, plays, d, side, to_robot)
 
     def read_by_change(self, before, cands, plays, d, side, to_robot):
         """The "depressive" reading (Nadav 14.11): the new board is always one of the legal
         results of the roll, the one that best explains what changed between the photos.
         Taken only when it fits well (cost <= CHANGE_OK) AND is clearly ahead of the next one
-        (by CHANGE_MARGIN); otherwise the game stops and asks, offering the best few first.
-        True when the move was settled here."""
+        (by CHANGE_MARGIN); otherwise the game stops and asks, offering the best few first."""
         while True:
-            ranked = vision.rank_by_change(before, self.last_img, self.c, self.L, self.board, cands)
+            ranked = vision.rank_by_change(before, self.last_img, self.c, self.L, self.board, cands, TRAYS)
             c1, best = ranked[0]
             c2 = ranked[1][0] if len(ranked) > 1 else 99.0
             text = lambda cb: next(rules.move_text(s) for s, nb in plays if to_robot(nb) == cb)  # noqa: E731
@@ -510,15 +593,14 @@ class Game:
             if c1 <= CHANGE_OK and c2 - c1 >= CHANGE_MARGIN:
                 steps = next(s for s, nb in plays if to_robot(nb) == best)
                 self.finish_human(side, d, steps, best, f"read by change ({c1:.1f} / {c2:.1f})")
-                self.ex.set_from_board(best)
-                return True
+                return
             top = [text(cb) for _, cb in ranked[:3]]
-            why = "not sure" if c1 <= CHANGE_OK else "the photo does not fit any legal move well"
             with self.lock:
+                self.likely = top
                 self.legal = top + sorted(t for t in (rules.move_text(s) for s, _ in plays) if t not in top)
-            self.say(f"I'm {why}. Most likely: {' / '.join(top)}. Pick the move you made "
-                     "(the likely ones are first), or fix the checkers and press Read again",
-                     "check", ["move_pick", "reread", "edit"])
+            self.say("Which move did you make?" if side == "human" and self.s["mode"] != "watch"
+                     else f"Which move did {self.name(side)} make?", "check",
+                     ["likely", "move_pick", "reread", "edit"])
             a = self.wait("move", "reread", "board")
             if a["name"] == "move":
                 hit = [(s, nb) for s, nb in plays if rules.move_text(s) == a.get("value")]
@@ -526,16 +608,15 @@ class Game:
                     rank = next((i for i, (_, cb) in enumerate(ranked) if cb == to_robot(hit[0][1])), -1)
                     self.finish_human(side, d, hit[0][0], to_robot(hit[0][1]),
                                       f"picked on the page (was no. {rank + 1} by change; {c1:.1f} / {c2:.1f})")
-                    self.ex.set_from_board(to_robot(hit[0][1]))
-                    return True
+                    return
                 continue
             if a["name"] == "board" and self._valid(a.get("value")):
                 b = [int(v) for v in a["value"]]
                 legal = [s for s, nb in plays if to_robot(nb) == b]
                 self.finish_human(side, d, legal[0] if legal else None, b,
                                   "fixed on the page" + ("" if legal else " (not a legal move)"))
-                self.ex.set_from_board(b)
-                return True
+                return
+            self.say("Reading the move…", "reading")
             self.look()
 
     def sim_hand_move(self, hv, d, text, side):
@@ -562,117 +643,58 @@ class Game:
         self.b.human_move(p, goal, sloppy=2.5)
         ex.places.setdefault(to, []).append(list(goal))
 
-    def wait_still(self, cands, period=1.0):
-        """Auto 'done': read every second; done when 2 reads in a row show the same legal result."""
-        last = None
-        while True:
-            if self.wait("done", timeout=period):
-                r, _ = self.look()
-                return r
-            r, _ = self.look()
-            best, cost = vision.closest(r, cands)
-            if cost == 0 and best != self.board:
-                if last == best:
-                    return r
-                last = best
-            else:
-                last = None
-
-    def accept_reading(self, r, cands, plays, hv, d, side, to_robot, before=None):
-        board0 = list(self.board)
-        while True:
-            if before is not None and self.last_img is not None and self.last_img is not before:
-                r = vision.anchor(r, board0, vision.slot_changes(before, self.last_img, self.c, self.L)[0])
-            best, cost = vision.closest(r, cands)
-            steps = next(s for s, nb in plays if to_robot(nb) == best)
-            if cost == 0:
-                self.finish_human(side, d, steps, best)
-                self._set_from(r)
-                return
-            consistent = not r.warnings and not getattr(r, "anchored", None)   # partly the known position: never "as seen"
-            if consistent and r.board != self.board:
-                self.warn(f"{side}'s move is not legal for {d[0]}-{d[1]} (closest legal: "
-                          f"{rules.move_text(steps)}). Taken as it is on the board.")
-                self.finish_human(side, d, None, r.board, "not legal, taken as seen")
-                self._set_from(r)
-                return
-            with self.lock:
-                self.legal = sorted(rules.move_text(s) for s, _ in plays)
-            self.say("I can't read the move: " + "; ".join(r.warnings[:2] or ["board unchanged"])
-                     + f". Closest legal move: {rules.move_text(steps)}. Or pick the move you made, "
-                     "or fix the reading on the board below", "check",
-                     ["reread", "closest", "move_pick", "edit"])
-            a = self.wait("reread", "closest", "done", "move", "board")
-            if a["name"] == "move":
-                hit = [(s, nb) for s, nb in plays if rules.move_text(s) == a.get("value")]
-                if hit:
-                    self.finish_human(side, d, hit[0][0], to_robot(hit[0][1]), "move picked on the page")
-                    self.ex.set_from_board(to_robot(hit[0][1]))
-                    return
-                continue
-            if a["name"] == "board" and self._valid(a.get("value")):
-                b = [int(v) for v in a["value"]]
-                legal = [s for s, nb in plays if to_robot(nb) == b]
-                self.finish_human(side, d, legal[0] if legal else None, b,
-                                  "fixed on the page" + ("" if legal else " (not a legal move)"))
-                self.ex.set_from_board(b)
-                return
-            if a["name"] == "closest":
-                self.finish_human(side, d, steps, best, "closest legal move, chosen on the page")
-                self.ex.set_from_board(best)
-                return
-            r, _ = self.look()
-
     def finish_human(self, side, d, steps, after, note=""):
         before = self.board
-        with self.lock:
-            self.board = list(after)
-            self.legal = []
+        self.set_board(after)
         self.record(side, d, steps, before, list(after), note)
 
     # -- game ---------------------------------------------------------------------
     def setup(self):
+        """The opening position is taken as it stands (Nadav 15.11): Start, or the robot
+        arranges it from the trays first. Nothing is read from the photo."""
+        self.say("Connecting…", "setup")
         self.connect()
         # one folder per game (Nadav 14.11), made when the first move is recorded
         self.logfile = GAMES / f"{datetime.now():%Y%m%d-%H%M%S}" / "game.jsonl"
-        if self.model is None:
-            try:
-                if self.is_sim:
-                    raise OSError
-                self.model = vision.Model.load()
-                if self.s["vision"] == "norm" and not self.model.norm:
-                    raise ValueError("colours saved before the norm method: learn again")
-            except (OSError, ValueError, KeyError):
-                self.say("Put the checkers in the opening position, then press Learn colours",
-                         "setup", ["learn"])
-                if not self.is_sim:
-                    self.wait("learn")
-                self.learn_colours()
-        r, _ = self.look()
-        if r.board != rules.OPENING:
-            self.say("The board is not in the opening position: " + "; ".join(r.warnings[:2])
-                     + ". If it is, press Learn colours", "setup", ["learn", "arrange", "reread", "accept"])
-            while r.board != rules.OPENING:
-                a = self.wait("arrange", "reread", "accept", "learn")
-                if a["name"] == "accept":
-                    break
-                if a["name"] == "learn":
-                    r = self.learn_colours()
-                    continue
-                if a["name"] == "arrange":
-                    self.say("Arranging the opening position...", "setup")
-                    self.ex.set_from_reading(r)
-                    n = self.ex.arrange(rules.OPENING)
-                    self.log_fn(f"arranged with {n} drags")
-                r, _ = self.look()
-        self.ex.set_from_reading(r) if r.board == rules.OPENING else self.ex.set_from_board(rules.OPENING)
         with self.lock:
             self.board = list(rules.OPENING)
+        self.ex.set_from_board(rules.OPENING)
+        self.look()
+        while True:
+            self.drain()
+            self.say("Set up the opening position, then press Start", "setup", ["start", "arrange"])
+            a = self.wait("start", "arrange")
+            if a["name"] == "start":
+                break
+            self.arrange_opening()
+        self.say("Starting…", "setup")
+        self.look()
         self.find_side_colours()
+        self.redraw()
+
+    def arrange_opening(self):
+        """The robot drags all 30 checkers from the bear-off trays (where place_trays.py or the
+        end of a game leaves them) to the opening position."""
+        import arrange_opening as ao
+        if self.is_sim:
+            self.sim_board(ALL_OUT)
+            self.new_executor()
+        with self.lock:
+            self.board = list(ALL_OUT)
+        self.ex.set_from_board(ALL_OUT)
+        self.say("The robot is arranging the opening position…", "setup")
+        self.look()
+        _, n = ao.arrange(self.b, self.L, ALL_OUT, rules.OPENING, log=self.log_fn, ex=self.ex)
+        self.log_fn(f"arranged with {n} drags")
+        with self.lock:
+            self.board = list(rules.OPENING)
+        self.ex.set_from_board(rules.OPENING)
+        self.look()
 
     def find_side_colours(self):
-        """What the robot's and the person's checkers really look like (from the opening photo), so the
-        page draws the board in the same colours."""
+        """Which side has the white checkers and which the black, from the brightness of the
+        opening photo at the places the opening puts them (no detector). The page draws both
+        the board and the circles on the photo in those colours; its swap button turns them."""
         if self.is_sim or getattr(self, "last_img", None) is None:
             return
         try:
@@ -681,18 +703,18 @@ class Game:
             self.log_fn(f"side colours: {e}")
             return
         if col:
-            self.log_fn(f"side colours: robot {col['robot']} / you {col['human']}")
-            with self.lock:
-                self.side_colours = col
+            self.robot_white = col["robot"] == "#f2f2ea"
+            self.log_fn(f"side colours: robot {'white' if self.robot_white else 'black'}")
 
     def play(self):
         self.setup()
         first = self.s["first"]
         if first == "roll":
             who, d = dice_mod.opening_roll()
-            self.say(f"Opening roll: robot {max(d) if who == 'robot' else min(d)}, "
-                     f"human {max(d) if who == 'human' else min(d)}. {who} starts", "opening")
-            time.sleep(1.0)
+            self.say(f"{self.name(who)} start{'' if self.name(who) == 'You' else 's'}", "opening",
+                     info=f"Opening roll: {self.name('robot')} {max(d) if who == 'robot' else min(d)}, "
+                          f"{self.name('human')} {max(d) if who == 'human' else min(d)}")
+            time.sleep(1.5)
         else:
             who = first
         mode = self.s["mode"]
@@ -724,23 +746,30 @@ class Game:
             kind, pts = "gammon", 2
             if b[25] < 0 or any(n < 0 for n in b[1:7]):
                 kind, pts = "backgammon", 3
+        # the page plays a fanfare, or a sad tune when a person lost to the robot
+        lost = self.s["mode"] == "robot_vs_human" and who == "robot"
         with self.lock:
-            self.winner = {"who": who, "kind": kind, "points": pts}
-        self.say(f"{who} wins ({kind}, {pts} point{'s' if pts > 1 else ''})", "over", ["new"])
+            self.winner = {"who": who, "kind": kind, "points": pts, "lost": lost}
+        n = self.name(who)
+        self.say(f"{n} win{'' if n == 'You' else 's'}!", "over", ["new"],
+                 info=f"{n} win{'' if n == 'You' else 's'}: {kind}, {pts} point{'s' if pts > 1 else ''}")
 
     def run_forever(self):
         """Game thread: wait for New game, play, repeat."""
         while True:
             try:
+                self.busy = False
                 a = self.inbox.get()
                 if a["name"] == "stop":
                     return
                 if a["name"] != "new":
                     continue
+                self.busy = True
                 with self.lock:
                     self.reset_state()
                 self.play()
             except Restart:
+                self.busy = False
                 a = self.inbox.get()
                 if a["name"] == "stop":
                     return

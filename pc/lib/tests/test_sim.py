@@ -61,6 +61,28 @@ def test_read_by_change():
     best, cost, margin = vision.closest_by_change(before, after, b.calib, L, rules.OPENING, cands)
     assert best == exp and cost == 0 and margin >= 1, (best, cost, margin)
 
+def test_bear_off_right_off_the_glass():
+    """A person bears off and takes the checkers away altogether (not into the tray): the
+    reading by change does not judge the trays, so the move still fits (Nadav 15.11)."""
+    L = Layout()
+    hv = [0] * 26                      # the person's view: 6 checkers left at home, the robot's all at its home
+    hv[6], hv[5], hv[3] = 2, 2, 2
+    hv[19], hv[20] = -8, -7
+    board = rules.flip(hv)
+    b = SimBoard.with_board(board, L, noise_mm=0.5, seed=4)
+    before = photo(b, L)
+    for p in (6, 5):                   # 6-5: 6/off 5/off, and both checkers leave the glass
+        xy = L.slot(25 - p, 1)
+        i = min(range(len(b.ck)), key=lambda i: np.hypot(b.ck[i][0] - xy[0], b.ck[i][1] - xy[1]))
+        del b.ck[i]
+    after = photo(b, L)
+    cands = [rules.flip(nb) for _, nb in rules.legal_moves(hv, (6, 5))]
+    trays = ("off_robot", "off_human")
+    cost = vision.rank_by_change(before, after, b.calib, L, board, cands, trays)[0][0]
+    strict = vision.rank_by_change(before, after, b.calib, L, board, cands)[0][0]
+    assert cost < 1.0 <= strict, (cost, strict)
+
+
 def play_game(seed):
     L = Layout()
     b = SimBoard.with_board(rules.OPENING, L, seed=seed, noise_mm=0.5)
