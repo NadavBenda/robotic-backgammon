@@ -17,12 +17,13 @@ Then: at most 15 per colour (the least sure ones go first).
 """
 import json
 from pathlib import Path
+from files import data
 
 import numpy as np
 
 import vision
 
-PATH = Path(__file__).resolve().parents[1] / "detector.json"
+PATH = data("detector.json")   # <PC code>/data/
 DEPTH = 7
 NEIGH = ((27.0, 0.0), (-27.0, 0.0), (0.0, 29.0), (0.0, -29.0))
 SMEAR = np.array([(6 * np.cos(a), 6 * np.sin(a)) for a in np.linspace(0, 2 * np.pi, 8, endpoint=False)])

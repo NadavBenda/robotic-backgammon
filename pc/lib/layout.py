@@ -30,12 +30,13 @@ fit from 4+ clicked reference slots, stored in layout.json as "affine").
 import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from files import data
 
 import numpy as np
 
 from gnubg import BAR, OFF  # noqa: F401
 
-PATH = Path(__file__).resolve().parents[1] / "layout.json"
+PATH = data("layout.json")   # <PC code>/data/
 
 
 @dataclass

@@ -12,13 +12,14 @@ how sure each one is of robot vs human. At most 15 per colour.
     ck = det.find(img, c, L, empty=None)           # [(x, y, side)]
 """
 from pathlib import Path
+from files import data
 
 import cv2
 import numpy as np
 
 import learned
 
-PATH = Path(__file__).resolve().parents[1] / "detector_cnn.pt"
+PATH = data("detector_cnn.pt")   # <PC code>/data/
 SIZE, SPAN = 48, 64.0      # crop pixels, crop mm
 
 
