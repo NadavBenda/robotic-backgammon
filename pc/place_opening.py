@@ -26,26 +26,32 @@ from layout import Layout
 PULSE_S = 0.4
 
 
-def spots(L):
-    """[(side, where, i, (x, y))] robot first, each point from the board edge inward."""
+ALL_OUT = [0] * 26     # every checker borne off: 15 + 15 in the bear-off trays
+
+
+def spots(L, board=None):
+    """[(side, where, i, (x, y))] robot first, each point (or tray) from the board edge inward."""
     out = []
     for side in ("robot", "human"):
-        for (where, i), (xy, s) in sorted(L.place(rules.OPENING).items(), key=lambda kv: (str(kv[0][0]), kv[0][1])):
+        for (where, i), (xy, s) in sorted(L.place(rules.OPENING if board is None else board).items(),
+                                          key=lambda kv: (str(kv[0][0]), kv[0][1])):
             if s == side:
                 out.append((side, where, i, xy))
     return out
 
 
 def name(side, where):
+    if str(where).startswith("off_"):
+        return ("robot's" if side == "robot" else "your") + " bear-off tray"
     if side == "robot":
         return f"robot point {where}"
     return f"your point {25 - where}"
 
 
-def main():
+def main(board=None, doc=None, done="Done. Now: py game.py, and press 'Learn colours' the first time."):
     L = Layout.load()
-    todo = spots(L)
-    print(__doc__.split("\n\n")[1])
+    todo = spots(L, board)
+    print((doc or __doc__).split("\n\n")[1])
     with Board() as b:
         b.home_if_needed()
         k = 0
@@ -71,7 +77,7 @@ def main():
                 placed[k] = (x, y)
             k += 1
         paths.travel(b, cart, L.park(), list(placed.values()), L.xmax, L.ymax)
-    print("Done. Now: py game.py, and press 'Learn colours' the first time.")
+    print(done)
 
 
 if __name__ == "__main__":
