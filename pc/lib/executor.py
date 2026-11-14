@@ -241,6 +241,8 @@ class Executor:
         for st in steps:
             to_key = self._key(st.to, side)
             frm_key = self._key(st.frm, side)
+            if st.hit and not (self.places.get(to_key) and self.side_of.get(to_key) == opp):
+                st = type(st)(st.frm, st.to, False)      # nothing of the opponent there any more
             if st.hit:
                 near = self._next_to(to_key, frm_key, f"bar_{opp}")
                 if near is not None:

@@ -74,7 +74,9 @@ def parse_move(text):
         single = []
         for a, b in zip(parts, parts[1:]):
             single.append(Step(_point(a.rstrip("*")), _point(b.rstrip("*")), b.endswith("*")))
-        steps += single * count
+        steps += single
+        for _ in range(count - 1):      # '13/10*(2)': only the first checker hits
+            steps += [Step(st.frm, st.to, False) for st in single]
     return steps
 
 

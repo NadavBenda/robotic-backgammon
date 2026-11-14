@@ -67,6 +67,14 @@ def test_simple_engine_plays_a_game():
     assert rules.winner(b) and n < 400
 
 
+def test_doubled_hit_hits_once():
+    """gnubg's '13/10*(2)' (3-3) is two checkers to the point, only the first one hits."""
+    import gnubg
+    steps = gnubg.parse_move("24/21(2) 13/10*(2)")
+    assert [(s.frm, s.to, s.hit) for s in steps] == [
+        (24, 21, False), (24, 21, False), (13, 10, True), (13, 10, False)], steps
+
+
 if __name__ == "__main__":
     for k, f in list(globals().items()):
         if k.startswith("test_"):

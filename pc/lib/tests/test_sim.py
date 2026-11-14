@@ -226,6 +226,22 @@ def test_arrange_takes_the_outer_tray_row_first():
         assert sorted(order[:7]) == list(range(7)), (w, order)   # row 0 (outer) is emptied first
 
 
+def test_second_checker_does_not_hit_its_own_first():
+    """3-3: 13/10*(2) onto a human blot - the second checker landing there is a plain move."""
+    import gnubg
+    L = Layout()
+    board = list(rules.OPENING)
+    board[10] = -1                      # a human blot on the robot's point 10
+    board[5] -= 0
+    b = SimBoard.with_board(board, L, seed=2, noise_mm=0.3)
+    ex = Executor(b, L, grab_s=0, log=lambda *a: None)
+    ex.set_from_board(board)
+    ex.play(gnubg.parse_move("13/10*(2)"), "robot")
+    assert len(ex.places[10]) == 2 and ex.side_of[10] == "robot", ex.places[10]
+    assert len(ex.places.get("bar_human", [])) == 1 and not ex.places.get("bar_robot"), ex.places
+    assert b.bumps == 0, b.bumps
+
+
 if __name__ == "__main__":
     for k, f in list(globals().items()):
         if k.startswith("test_"):
