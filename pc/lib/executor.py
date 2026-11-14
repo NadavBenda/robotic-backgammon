@@ -43,6 +43,7 @@ class Executor:
         self.warnings = []
         self.dragged_mm = 0.0
         self.cart = None          # where the magnet is (None = unknown: go straight)
+        self.on_path = None       # called with every planned drag path before it is driven (the game page draws it)
         if drag and hasattr(b, "drag_profile"):
             b.drag_profile(*drag)
 
@@ -140,6 +141,8 @@ class Executor:
         others = [p for p in self.all_xy() if np.hypot(p[0] - start[0], p[1] - start[1]) > 1]
         path, how = self.plan(start, goal, others)
         self.log(f"   {frm_key} -> {to_key}: {len(path) - 1} line(s), {paths.length(path):.0f} mm ({how})")
+        if self.on_path:
+            self.on_path(path)
         self.goto(start, others)
         paths.drag(self.b, path, overshoot=self._overshoot(path, others), grab_s=self.grab_s,
                    xmax=self.L.xmax, ymax=self.L.ymax, settle_s=self.settle_s,
