@@ -92,18 +92,24 @@ function edPlace(ev){if(!ED)return;const svg=document.getElementById("board");co
  else if(ED[p]*sign<0)ED[p]=sign;else ED[p]+=sign;
  drawEdit(S)}
 function offOf(b){let r=0,h=0;for(const v of b){if(v>0)r+=v;else h-=v}return [15-r,15-h]}
+function stack(x,y,dir,v,side,H){// checkers side by side from the edge toward the middle, like a real board
+ const n=Math.abs(v);if(!n)return "";const step=n>1?Math.min(26,138/(n-1)):0;let h="";
+ for(let i=0;i<n;i++)h+=`<circle cx="${x+dir*i*step}" cy="${H-y}" r="12.5" fill="var(--${side})" stroke="#0008" stroke-width="1.2"/>`;
+ if(n>6)h+=`<text x="${x+dir*(n-1)*step}" y="${H-y+5}" font-size="13" font-weight="bold" text-anchor="middle" fill="${side==='robot'?'#000':'#fff'}">${n}</text>`;
+ return h}
 function drawEdit(s){const svg=document.getElementById("board");const H=430;
- let h=`<rect x="-32" y="-16" width="474" height="482" rx="10" fill="var(--card)" stroke="#e0a000" stroke-width="3"/>`;
+ let h=`<rect x="-32" y="-16" width="474" height="482" rx="10" fill="var(--card)" stroke="#e0a000" stroke-width="4"/>`;
+ h+=`<rect x="-32" y="-16" width="474" height="482" rx="10" fill="#e0a000" opacity=".10"/>`;
  h+=`<rect x="150" y="-10" width="110" height="${H-60}" fill="var(--line)" opacity=".25"/>`;
+ h+=`<text x="205" y="${H-236+4}" font-size="13" font-weight="bold" text-anchor="middle" fill="#c08000">EDITING</text>`;
  for(const [x,y,n] of s.labels){const left=x<205;
   const pts=left?`${x-13},${H-y-13} ${x-13},${H-y+13} ${x+150},${H-y}`:`${x+13},${H-y-13} ${x+13},${H-y+13} ${x-150},${H-y}`;
   h+=`<polygon points="${pts}" fill="${n%2?'#c9a77c':'#8f6a43'}" opacity=".45"/>`;
   h+=`<text x="${left?-22:432}" y="${H-y+4}" font-size="11" text-anchor="middle" fill="var(--mute)">${n}</text>`;
-  const v=ED[25-n];if(v)h+=`<circle cx="${x}" cy="${H-y}" r="12.5" fill="var(--${v>0?'robot':'human'})" stroke="#0006"/>`+
-   `<text x="${x}" y="${H-y+5}" font-size="14" font-weight="bold" text-anchor="middle" fill="${v>0?'#000':'#fff'}">${Math.abs(v)}</text>`}
- const bx=[[60,ED[0],"robot"],[350,-ED[25],"human"]];
- for(const [x,v,side] of bx){h+=`<text x="${x}" y="${H-s.bar_y+4}" font-size="11" text-anchor="middle" fill="var(--mute)">bar</text>`;
-  if(v)h+=`<circle cx="${x+30}" cy="${H-s.bar_y}" r="12.5" fill="var(--${side})" stroke="#0006"/><text x="${x+30}" y="${H-s.bar_y+5}" font-size="14" font-weight="bold" text-anchor="middle" fill="${side==='robot'?'#000':'#fff'}">${v}</text>`}
+  const v=ED[25-n];if(v)h+=stack(x,y,left?1:-1,v,v>0?"robot":"human",H)}
+ const bx=[[60,ED[0],"robot",1],[350,-ED[25],"human",-1]];
+ for(const [x,v,side,dir] of bx){h+=`<text x="${x}" y="${H-s.bar_y+4}" font-size="11" text-anchor="middle" fill="var(--mute)">bar</text>`;
+  if(v)h+=stack(x+30*dir,s.bar_y,dir,v,side,H)}
  const o=offOf(ED);h+=`<text x="205" y="${H-31-4}" font-size="12" text-anchor="middle" fill="var(--mute)">off: robot ${o[0]} · you ${o[1]}</text>`;
  svg.innerHTML=h}
 function post(a){return fetch("/action",{method:"POST",body:JSON.stringify(a)})}
