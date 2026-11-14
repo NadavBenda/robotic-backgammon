@@ -79,7 +79,7 @@ table{width:100%;border-collapse:collapse;font-size:13px}td{padding:3px 4px;bord
 <section class="pair">
  <div class="card"><h1>The game</h1>
   <div class="pic"><svg id="board" viewBox="-20 -20 450 460" preserveAspectRatio="none"></svg></div>
-  <div class="mute" style="margin-top:6px">Same way round as the camera's view next to it. Numbers are the columns.</div></div>
+  <div class="mute" style="margin-top:6px">Upside down compared with the camera's view next to it. Numbers are the columns.</div></div>
  <div class="card"><h1>What the camera sees</h1>
   <div class="pic"><img id="photo" alt="top view" style="display:none"></div>
   <div class="mute" style="margin-top:6px">The board from above, circles = checkers found.</div></div>
@@ -102,9 +102,11 @@ const BTN={new:"New game",done:"Done",accept:"Accept",reread:"Read again",closes
 let S=null, built=false, lastPhoto=0, ED=null, EDC="robot";
 // -- the board is drawn as the corrected camera photo shows it: frame mm (x, y from the near side)
 // -> magnet mm (x right, y down) through the layout's own map (s.frame), 1 unit = 1 mm --
-function P(x,y){const A=S.frame;return [A[0][0]*x+A[0][1]*y+A[0][2],A[1][0]*x+A[1][1]*y+A[1][2]]}
+// FLIP: the drawing is shown upside down compared with the camera's view (Nadav 14.11)
+const FLIP=true;
+function P(x,y){const A=S.frame,b=A[1][0]*x+A[1][1]*y+A[1][2];return [A[0][0]*x+A[0][1]*y+A[0][2],FLIP?420-b:b]}
 function Q(x,y){const [a,b]=P(x,y);return `${a.toFixed(1)},${b.toFixed(1)}`}
-function toFrame(mx,my){const A=S.frame,d=A[0][0]*A[1][1]-A[0][1]*A[1][0],u=mx-A[0][2],v=my-A[1][2];
+function toFrame(mx,my){if(FLIP)my=420-my;const A=S.frame,d=A[0][0]*A[1][1]-A[0][1]*A[1][0],u=mx-A[0][2],v=my-A[1][2];
  return [(A[1][1]*u-A[0][1]*v)/d,(-A[1][0]*u+A[0][0]*v)/d]}
 function txt(x,y,t,size,fill,bold){const [a,b]=P(x,y);
  return `<text x="${a}" y="${b+size*0.35}" font-size="${size}" ${bold?'font-weight="bold"':''} text-anchor="middle" fill="${fill}">${t}</text>`}
