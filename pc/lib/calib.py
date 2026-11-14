@@ -17,11 +17,12 @@ so no separate lens calibration (chessboard) is needed. mm -> pixel is fitted se
 """
 import json
 from pathlib import Path
+from files import data
 
 import cv2
 import numpy as np
 
-PATH = Path(__file__).resolve().parents[1] / "calib.json"
+PATH = data("calib.json")   # <PC code>/data/
 
 
 def _terms(a, b, deg):

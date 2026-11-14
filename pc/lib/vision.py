@@ -30,11 +30,12 @@ take the one that best fits the photo. One misread checker then usually does not
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
+from files import data
 
 import cv2
 import numpy as np
 
-PATH = Path(__file__).resolve().parents[1] / "vision_model.json"
+PATH = data("vision_model.json")   # <PC code>/data/
 CLASSES = ("empty", "robot", "human")
 STEEL_R, RIM = 7.0, (10.0, 12.5)   # mm: steel disc radius, rim ring from-to
 
