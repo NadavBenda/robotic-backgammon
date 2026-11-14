@@ -28,6 +28,9 @@ DEPTH = 7
 NEIGH = ((27.0, 0.0), (-27.0, 0.0), (0.0, 29.0), (0.0, -29.0))
 SMEAR = np.array([(6 * np.cos(a), 6 * np.sin(a)) for a in np.linspace(0, 2 * np.pi, 8, endpoint=False)])
 MATCH_MM = 14.0     # a labelled checker belongs to the nearest slot within this
+POS_PRESENCE = True  # the presence network sees where on the board the slot is
+POS_COLOUR = True    # the colour network sees where on the board the column is (may learn
+                     # "this column is usually the robot's" instead of looking: diag_detector.py)
 
 
 def slots(L):
@@ -116,10 +119,19 @@ def colour_rows(F, present, L):
         if not idx:
             continue
         sub = F[idx]
-        rows.append(np.concatenate([sub[:, :2].mean(0), sub[:, :2].min(0), sub[:, -4:-2].mean(0),
-                                    [len(idx) / DEPTH]]))
+        pos = sub[:, -4:-2].mean(0) if POS_COLOUR else np.zeros(2)
+        rows.append(np.concatenate([sub[:, :2].mean(0), sub[:, :2].min(0), pos, [len(idx) / DEPTH]]))
         pts.append(p)
     return pts, np.array(rows).reshape(len(rows), -1)
+
+
+def _pres(F):
+    """The presence network's input: F, without the position columns when POS_PRESENCE is off."""
+    if POS_PRESENCE:
+        return F
+    G = np.array(F, float)
+    G[:, -4:-2] = 0.0
+    return G
 
 
 def full(r):
@@ -227,7 +239,7 @@ class Detector:
         def stack(ss):
             if not ss:
                 return None
-            return np.vstack([F for F, _ in ss]), (np.concatenate([yy for _, yy in ss]) > 0).astype(float)
+            return np.vstack([_pres(F) for F, _ in ss]), (np.concatenate([yy for _, yy in ss]) > 0).astype(float)
 
         def colour(ss):
             R, t = [], []
@@ -253,7 +265,7 @@ class Detector:
     def find_f(self, F, L):
         """([(x, y, side)], [(confidence, x, y, side)]) from a feature matrix."""
         S = slots(L)
-        pp = self.presence.prob(F)
+        pp = self.presence.prob(_pres(F))
         present = pp > 0.5
         side_of = {}
         pts, rows = colour_rows(F, present, L)
