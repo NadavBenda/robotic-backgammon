@@ -242,6 +242,23 @@ def test_second_checker_does_not_hit_its_own_first():
     assert b.bumps == 0, b.bumps
 
 
+def test_anchor_keeps_what_did_not_change():
+    """The detector misses the person's checkers on point 2 (robot's 23) every time; after the
+    board was fixed once, places that did not change in the photo keep the known count."""
+    L = Layout()
+    b = SimBoard.with_board(rules.OPENING, L, noise_mm=0.5, seed=4)
+    before = photo(b, L)
+    b.human_move(L.slot(1, 1), L.slot(7, 0), sloppy=3)       # person: robot view 1 -> 7
+    after = photo(b, L)
+    exp = list(rules.OPENING)
+    exp[1], exp[7] = -1, -1
+    seen = list(exp)
+    seen[12] = 0                                              # the detector misses point 12 (5 checkers)
+    r = vision.Reading([], {}, seen, (0, 0), ["human: 10 on the board + 0 off = 10, not 15"])
+    a = vision.anchor(r, rules.OPENING, vision.slot_changes(before, after, b.calib, L)[0])
+    assert a.board == exp and not a.warnings and a.anchored == [12], (a.board, a.warnings)
+
+
 if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")      # Windows consoles (cp1255) and Hebrew paths
