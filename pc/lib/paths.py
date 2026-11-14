@@ -27,12 +27,14 @@ CLEAR = 30.0      # min centre distance to other checkers while dragging
 SOFT = 50.0       # prefer staying at least this far (24 mm air), worth a detour
 NEAR_W = 3.0      # how much a mm next to a checker costs over a mm in the open (x (1 + NEAR_W))
 GRID = 5.0        # mm
-SEG_MM = 40.0     # what one more line in a path costs, as mm of travel (Nadav 13.11): the cart stops at
+SEG_MM = 70.0     # what one more line in a path costs, as mm of travel (Nadav 13.11): the cart stops at
                   # every corner, and a stop + restart take about v*v/a = 180*180/800 mm worth of time
 XMAX, YMAX = 410.0, 420.0
 OVERSHOOT = 5.0   # mm past the target along the last line (the checker lags), then back
 SETTLE_S = 0.4    # s on the target with the magnet still on, so the checker centres over it
 GRAB_S = 0.3      # s after the magnet turns on
+LEAD_MM = 35.0    # a drag starts with one straight run of at least this (Nadav 14.11): the checker is
+                  # picked up there at full acceleration, a turn straight away would let it slip off
 ROUND_MM = 10.0   # a sharp corner is cut by one short line from this far before it to this far after
 ROUND_N = 0       # extra points between those two (0 = a plain cut; each point is a brief stop)
 ROUND_MIN_DEG = 30.0  # corners that turn less than this are left alone
@@ -159,6 +161,26 @@ sharper turn, Nadav 14.11; 0 for magnet-off moves). A line may skip points only 
     return [chain[k] for k in out[::-1]]
 
 
+def _long_start(path, others, need, lead=None):
+    """Make the first line at least LEAD_MM + ROUND_MM long (the corner is cut ROUND_MM before it):
+    when it is shorter, drop the first corner if the line to the next one keeps clear, or else
+    carry the first line straight on to that length and turn there, if that keeps clear."""
+    lead = (LEAD_MM + ROUND_MM) if lead is None else lead
+    path = list(path)
+    A = lambda p: np.asarray(p, float)  # noqa: E731
+    while len(path) > 2 and np.hypot(path[1][0] - path[0][0], path[1][1] - path[0][1]) < lead:
+        if _seg_ok(A(path[0]), A(path[2]), others, need):
+            del path[1]
+            continue
+        d = A(path[1]) - A(path[0])
+        q = A(path[0]) + d / max(float(np.hypot(*d)), 1e-9) * lead      # or go on straight to `lead` and turn there
+        if _seg_ok(A(path[0]), q, others, need) and _seg_ok(q, A(path[2]), others, need) \
+                and 0 <= q[0] <= XMAX and 0 <= q[1] <= YMAX:
+            path[1] = (float(q[0]), float(q[1]))
+        break
+    return path
+
+
 def plan(start, goal, others=(), xmax=XMAX, ymax=YMAX, clear=CLEAR, soft_mm=SOFT, seg_mm=SEG_MM, drag=True):
     """Corners of a path from start to goal (mm), first = start, last = goal.
     seg_mm: what one more line costs (as mm), so a slightly longer path with fewer stops wins.
@@ -238,7 +260,10 @@ def plan(start, goal, others=(), xmax=XMAX, ymax=YMAX, clear=CLEAR, soft_mm=SOFT
     # cut corners: the cheapest set of straight lines through the A* points, each line paying
     # its length (more next to checkers) + seg_mm for the stop it adds
     out = _fewest_lines(chain, others, need, clear, soft_mm, seg_mm, DRAG_V if drag else 0.0)
-    return round_corners([(float(p[0]), float(p[1])) for p in out], others, need)
+    out = [(float(p[0]), float(p[1])) for p in out]
+    if drag:
+        out = _long_start(out, others, need)
+    return round_corners(out, others, need)
 
 
 FREE_CLEARS = (40.0, 32.0, 25.0, 18.0, 14.0)  # magnet off: the first of these (mm from checker centres) that has a way

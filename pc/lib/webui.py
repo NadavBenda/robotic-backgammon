@@ -38,6 +38,7 @@ main{max-width:1180px;margin:0 auto;padding:16px;display:grid;gap:16px}
 .pic{position:relative;width:100%;aspect-ratio:450/460;border-radius:8px;overflow:hidden;background:var(--bg);margin-top:8px}
 .pic svg,.pic img{position:absolute;inset:0;width:100%;height:100%;display:block;object-fit:fill;margin:0}
 button.big{font-size:22px;padding:14px 44px;border-radius:12px}
+#edask{position:fixed;z-index:9;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px;box-shadow:0 4px 14px #0004;display:flex;flex-direction:column;gap:6px;font-size:13px}
 button.small{font-size:12px;padding:3px 10px;opacity:.75}
 .swap{display:inline-flex;align-items:center;gap:8px;margin:4px 0 2px}
 .chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:20px;padding:4px 12px;font-weight:600;background:var(--card)}
@@ -116,20 +117,31 @@ function base(s,edit){let h=`<rect x="-20" y="-20" width="450" height="460" rx="
   h+=`<polygon points="${pts}" fill="${n%2?'#c9a77c':'#8f6a43'}" opacity=".45"/>`;
   h+=txt(left?x+162:x-162,y,n,11,"var(--mute)")}
  return h}
-function edPlace(ev){if(!ED)return;const svg=document.getElementById("board");const pt=svg.createSVGPoint();
+function edAdd(p,side){if(p===0||p===25){if(side==="robot")ED[0]++;else ED[25]--}
+ else if(side==="robot"){if(ED[p]<0)ED[p]=1;else ED[p]++}else{if(ED[p]>0)ED[p]=-1;else ED[p]--}drawEdit(S)}
+function edAsk(ev,p){// a new column (or the bar): which colour to add?
+ let m=document.getElementById("edask");if(m)m.remove();
+ m=el("div",{id:"edask",class:"edask"});m.style.left=Math.min(ev.clientX,innerWidth-190)+"px";m.style.top=ev.clientY+"px";
+ m.append(el("div",{text:"Which colour to add?"}));
+ for(const side of ["robot","human"]){const b=el("button",{text:side==="robot"?"Robot":"You",onclick:e=>{e.stopPropagation();m.remove();edAdd(p,side)}});
+  b.style.borderLeft="14px solid var(--"+side+")";m.append(b)}
+ document.body.append(m)}
+document.addEventListener("click",e=>{const m=document.getElementById("edask");if(m&&!m.contains(e.target)&&e.target.id!=="board"&&!e.target.closest("#board"))m.remove()});
+function edPlace(ev){if(!ED)return;const old=document.getElementById("edask");if(old)old.remove();
+ const svg=document.getElementById("board");const pt=svg.createSVGPoint();
  pt.x=ev.clientX;pt.y=ev.clientY;const q=pt.matrixTransform(svg.getScreenCTM().inverse());
  const [fx,y]=toFrame(q.x,q.y),left=fx<205;
+ // the bar: a click on a checker takes it off, anywhere else on the bar asks which colour to add
  if(Math.abs(fx-205)<22&&Math.abs(y-S.bar_y)<BARP*5){const st=Math.round((y-S.bar_y)/BARP),k=st>0?2*st:st<0?-2*st-1:0;
-  const p=EDC==="remove"?(k%2?25:0):(EDC==="robot"?0:25);
-  if(EDC==="remove"){if(p===0&&ED[0]>0)ED[0]--;if(p===25&&ED[25]<0)ED[25]++}
-  else if(p===0&&EDC==="robot")ED[0]++;else if(p===25&&EDC==="human")ED[25]--;
-  drawEdit(S);return}
- let best=null;for(const [x,ly,n] of S.labels){if((x<205)!==left)continue;const d=Math.abs(ly-y);if(!best||d<best[0])best=[d,25-n]}
- if(!best)return;const p=best[1],sign=EDC==="robot"?1:-1;
- if(p===0||p===25){if(EDC==="remove"){if(p===0&&ED[0]>0)ED[0]--;if(p===25&&ED[25]<0)ED[25]++}
-   else if(p===0&&EDC==="robot")ED[0]++;else if(p===25&&EDC==="human")ED[25]--}
- else if(EDC==="remove"){if(ED[p]>0)ED[p]--;else if(ED[p]<0)ED[p]++}
- else if(ED[p]*sign<0)ED[p]=sign;else ED[p]+=sign;
+  const rob=k%2===0,i=rob?k/2:(k-1)/2,have=rob?ED[0]:-ED[25];
+  if(i<have&&Math.abs(y-(S.bar_y+barStep(k)*BARP))<14){if(rob)ED[0]--;else ED[25]++;drawEdit(S)}
+  else edAsk(ev,rob?0:25);return}
+ let best=null;for(const [x,ly,n] of S.labels){if((x<205)!==left)continue;const d=Math.abs(ly-y);if(!best||d<best[0])best=[d,25-n,x]}
+ if(!best)return;const p=best[1],v=ED[p],n=Math.abs(v);
+ if(!n){edAsk(ev,p);return}                                  // an empty column: ask the colour
+ const step=n>1?Math.min(26,138/(n-1)):0,dist=(fx-best[2])*(left?1:-1);
+ if(dist<(n-1)*step+13){ED[p]+=v>0?-1:1}                      // on a checker: take it off (whichever colour)
+ else ED[p]+=v>0?1:-1;                                         // on the empty part of the column: one more of its colour
  drawEdit(S)}
 function offOf(b){let r=0,h=0;for(const v of b){if(v>0)r+=v;else h-=v}return [15-r,15-h]}
 function stack(x,y,dir,v,side,vert){// checkers side by side from the edge toward the middle, like a real board
@@ -204,10 +216,8 @@ function render(s){S=s;paintSides(s.colours);if(!built){buildSettings(s.settings
   for(const k of s.asks){
    if(k==="dice_input"){const i=el("input",{placeholder:"dice, e.g. 5 2",size:8});
     a.append(i,el("button",{text:"OK",onclick:()=>post({name:"dice",value:i.value})}))}
-   else if(k==="edit"){const sel=el("select",{onchange:()=>{EDC=sel.value}});
-    for(const [v,t] of [["robot",edText("robot")],["human",edText("human")],["remove","click removes one"]])
-     sel.append(el("option",{value:v,text:t,class:"ed-"+v}));sel.value=EDC;
-    a.append(el("div",{class:"mute",text:"Fix the reading: click a point (or the bar) on the board."}),sel,
+   else if(k==="edit"){
+    a.append(el("div",{class:"mute",text:"Fix the reading: click a checker to take it off; click empty space in a column to add one of its colour; click an empty column or the bar to choose the colour."}),
      el("button",{text:"Use this board",onclick:()=>post({name:"board",value:ED})}),
      el("button",{class:"sec",text:"Back to the camera's reading",onclick:()=>{ED=S.seen.slice();drawEdit(S)}}))}
    else if(k==="move_pick"){const sel=el("select");for(const m of s.legal)sel.append(el("option",{text:m}));

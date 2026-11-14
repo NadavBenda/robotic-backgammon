@@ -243,6 +243,8 @@ def test_second_checker_does_not_hit_its_own_first():
 
 
 if __name__ == "__main__":
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")      # Windows consoles (cp1255) and Hebrew paths
     for k, f in list(globals().items()):
         if k.startswith("test_"):
             f()
