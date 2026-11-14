@@ -351,8 +351,10 @@ class Game:
         fixed on the page (Edit)."""
         before, board0 = self.last_img, list(self.board)
         r, img = self.look()
+        if before is not None:   # places that did not change keep the known position
+            r = vision.anchor(r, board0, vision.slot_changes(before, img, self.c, self.L)[0])
         if r.board == expected:
-            self.ex.set_from_reading(r)
+            self._set_from(r)
             return expected
         if before is not None:   # what changed since the last photo is exactly this move: fine
             changed, _ = vision.slot_changes(before, img, self.c, self.L)
@@ -377,10 +379,20 @@ class Game:
                 if b != expected:
                     self.warn("board fixed on the page: it differs from the robot's move")
                 return b
-            r, _ = self.look()
+            r, img = self.look()
+            if before is not None:
+                r = vision.anchor(r, board0, vision.slot_changes(before, img, self.c, self.L)[0])
             if r.board == expected:
-                self.ex.set_from_reading(r)
+                self._set_from(r)
                 return expected
+
+    def _set_from(self, r):
+        """Where the checkers stand, for the robot's paths: the detector's own positions, or the
+        board's nominal slots when part of the reading came from the known position (anchor)."""
+        if getattr(r, "anchored", None):
+            self.ex.set_from_board(r.board)
+        else:
+            self.ex.set_from_reading(r)
 
     @staticmethod
     def _valid(b):
@@ -457,7 +469,7 @@ class Game:
                 self.finish_human(side, d, steps, best, "read by change")
                 self.ex.set_from_board(best)
                 return
-        self.accept_reading(r, cands, plays, hv, d, side, to_robot)
+        self.accept_reading(r, cands, plays, hv, d, side, to_robot, before)
 
     def sim_hand_move(self, hv, d, text, side):
         for s, nb in rules.legal_moves(hv, d):
@@ -499,20 +511,23 @@ class Game:
             else:
                 last = None
 
-    def accept_reading(self, r, cands, plays, hv, d, side, to_robot):
+    def accept_reading(self, r, cands, plays, hv, d, side, to_robot, before=None):
+        board0 = list(self.board)
         while True:
+            if before is not None and self.last_img is not None and self.last_img is not before:
+                r = vision.anchor(r, board0, vision.slot_changes(before, self.last_img, self.c, self.L)[0])
             best, cost = vision.closest(r, cands)
             steps = next(s for s, nb in plays if to_robot(nb) == best)
             if cost == 0:
                 self.finish_human(side, d, steps, best)
-                self.ex.set_from_reading(r)
+                self._set_from(r)
                 return
-            consistent = not r.warnings
+            consistent = not r.warnings and not getattr(r, "anchored", None)   # partly the known position: never "as seen"
             if consistent and r.board != self.board:
                 self.warn(f"{side}'s move is not legal for {d[0]}-{d[1]} (closest legal: "
                           f"{rules.move_text(steps)}). Taken as it is on the board.")
                 self.finish_human(side, d, None, r.board, "not legal, taken as seen")
-                self.ex.set_from_reading(r)
+                self._set_from(r)
                 return
             with self.lock:
                 self.legal = sorted(rules.move_text(s) for s, _ in plays)

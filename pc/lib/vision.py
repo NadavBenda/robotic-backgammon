@@ -554,6 +554,30 @@ def change_cost(changed, L, b0, b1):
     return sum(abs(seen.get(w, 0) - want.get(w, 0)) for w in set(seen) | set(want))
 
 
+def anchor(r, board, changed):
+    """The reading with every place that did not change since the last photo taken from
+    `board` (the position known then: confirmed, or fixed on the page). The detector may
+    keep missing a checker it cannot see well (Nadav 14.11: columns 2 and 3); what did not
+    change since is still where it was, so only the changed places come from the detector."""
+    moved = {w for (w, i), ch in changed.items() if ch}
+    b = list(r.board)
+    kept = []
+    # only checkers the detector MISSES are filled in: fewer (or none) of the same colour where
+    # nothing changed. A different colour or more checkers there is something real (a hit can
+    # change a place without a big change in the photo), so the detector's reading stays.
+    short = lambda seen, known: known != 0 and seen * known >= 0 and abs(seen) < abs(known)  # noqa: E731
+    for k, w in [(p, p) for p in range(1, 25)] + [(0, "bar_robot"), (25, "bar_human")]:
+        if w not in moved and short(b[k], board[k]):
+            b[k] = board[k]
+            kept.append(k)
+    if not kept:
+        return r
+    ok = sum(x for x in b if x > 0) + r.off[0] == 15 and -sum(x for x in b if x < 0) + r.off[1] == 15
+    out = Reading(r.checkers, r.places, b, r.off, [] if ok else list(r.warnings))
+    out.anchored = kept          # the detector's checkers do not match this board there
+    return out
+
+
 def closest_by_change(before, after, c, L, board, candidates):
     """(best board, cost, margin) out of candidates, judged only by what changed since the
     `before` photo of `board`. margin = cost of the second best minus the best."""
