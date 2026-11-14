@@ -115,7 +115,7 @@ function offOf(b){let r=0,h=0;for(const v of b){if(v>0)r+=v;else h-=v}return [15
 function stack(x,y,dir,v,side){// checkers side by side from the edge toward the middle, like a real board
  const n=Math.abs(v);if(!n)return "";const step=n>1?Math.min(26,138/(n-1)):0;let h="";
  for(let i=0;i<n;i++)h+=disc(x+dir*i*step,y,side);
- if(n>6)h+=txt(x+dir*(n-1)*step,y,n,13,side==='robot'?'#000':'#fff',true);
+ if(n>6)h+=txt(x+dir*(n-1)*step,y,n,13,ink(side),true);
  return h}
 function drawEdit(s){const svg=document.getElementById("board");
  let h=base(s,true)+txt(205,s.labels[11][1],"EDITING",13,"#c08000",true);
@@ -154,7 +154,12 @@ function drawBoard(s){const svg=document.getElementById("board");
  let h=base(s,false)+txt(205,s.bar_y,"BAR",12,"var(--mute)")+txt(205,35,"bear-off",11,"var(--mute)");
  for(const [x,y,side] of s.pieces)h+=disc(x,y,side);
  svg.innerHTML=h}
-function render(s){S=s;if(!built){buildSettings(s.settings);built=true}
+function ink(side){const c=getComputedStyle(document.documentElement).getPropertyValue("--"+side).trim();
+ const m=/^#([0-9a-f]{6})$/i.exec(c);if(!m)return side==="robot"?"#000":"#fff";const n=parseInt(m[1],16);
+ return (0.299*(n>>16)+0.587*((n>>8)&255)+0.114*(n&255))>150?"#000":"#fff"}
+function paintSides(c){const r=document.documentElement.style;
+ if(c){r.setProperty("--robot",c.robot);r.setProperty("--human",c.human)}else{r.removeProperty("--robot");r.removeProperty("--human")}}
+function render(s){S=s;paintSides(s.colours);if(!built){buildSettings(s.settings);built=true}
  document.getElementById("sim").textContent=s.sim?"(simulator)":"";
  const p=document.getElementById("prompt");p.textContent=s.prompt;
  const dk=JSON.stringify(s.dice||null);if(dk!==lastDice){if(lastDice!==undefined&&s.dice)roll();lastDice=dk}

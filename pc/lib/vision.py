@@ -562,6 +562,31 @@ def closest_by_change(before, after, c, L, board, candidates):
     return best, costs[0][0], margin
 
 
+def side_colours(img, c, L, board, radius_mm=6.0):
+    """{'robot': '#rrggbb', 'human': '#rrggbb'}: what each side's checkers look like in a photo of
+    board (normally the opening): the median over the side's checkers of the mean colour of the
+    disc on top of each. Brightened a little as a pair (the mirror view is dim) so the page can
+    paint its drawing in the real colours (Nadav 14.11)."""
+    import calib
+    top, f = calib.view(img, c, xmax=L.xmax, ymax=L.ymax, board=False)
+    k = f.k
+    yy, xx = np.mgrid[0:top.shape[0], 0:top.shape[1]]
+    got = {"robot": [], "human": []}
+    for (xy, side) in L.place(board).values():
+        u, v = (float(t) for t in f.mm_to_px(*xy))
+        r = radius_mm * k
+        if not (r < u < top.shape[1] - r and r < v < top.shape[0] - r):
+            continue
+        sel = (xx - u) ** 2 + (yy - v) ** 2 <= r * r
+        got[side].append(top[sel].reshape(-1, 3).mean(0))
+    if not got["robot"] or not got["human"]:
+        return None
+    col = {s: np.median(np.array(v), axis=0) for s, v in got.items()}      # BGR
+    peak = max(float(col["robot"].max()), float(col["human"].max()), 1.0)
+    gain = min(255.0 / peak, 2.0) if peak < 230 else 1.0
+    return {s: "#%02x%02x%02x" % tuple(int(min(255, round(float(x) * gain))) for x in v[::-1]) for s, v in col.items()}
+
+
 def draw(img, c, r, L=None):
     """The photo with every checker found circled in its class colour, for the UI / log."""
     out = img.copy()
