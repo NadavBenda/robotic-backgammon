@@ -662,12 +662,13 @@ def side_colours(img, c, L, board, radius_mm=6.0):
     return {"robot": white, "human": black} if br > bh else {"robot": black, "human": white}
 
 
-def draw(img, c, r, L=None):
-    """The photo with every checker found circled in its class colour, for the UI / log."""
+def draw(img, c, r, L=None, swap=False):
+    """The photo with every checker found circled in its class colour (robot green, person
+    orange; the other way round with swap), for the UI / log."""
     out = img.copy()
     for x, y, s in r.checkers:
         u, v = c.mm_to_px(x, y)
-        col = (0, 255, 0) if s == "robot" else (0, 165, 255)
+        col = (0, 255, 0) if (s == "robot") != swap else (0, 165, 255)
         cv2.circle(out, (int(u), int(v)), 14, col, 2, cv2.LINE_AA)
         cv2.drawMarker(out, (int(u), int(v)), col, cv2.MARKER_CROSS, 8, 1, cv2.LINE_AA)   # the centre
     return out
