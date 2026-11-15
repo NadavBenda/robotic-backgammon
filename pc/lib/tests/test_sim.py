@@ -272,6 +272,35 @@ def test_arrange_takes_the_outer_tray_row_first():
         assert sorted(order[:7]) == list(range(7)), (w, order)   # row 0 (outer) is emptied first
 
 
+def test_assign_finds_the_smallest_total():
+    import itertools
+    from executor import assign
+    rng = random.Random(1)
+    for _ in range(150):
+        n, m = rng.randint(1, 5), rng.randint(1, 5)
+        c = [[rng.random() for _ in range(m)] for _ in range(n)]
+        got = assign(c)
+        k = min(n, m)
+        best = min(sum(c[i][j] for i, j in zip(rows, cols)) for rows in itertools.combinations(range(n), k)
+                   for cols in itertools.permutations(range(m), k))
+        assert len({j for j in got if j is not None}) == k
+        assert abs(sum(c[i][j] for i, j in enumerate(got) if j is not None) - best) < 1e-9
+
+
+def test_arrange_from_the_middle_of_a_game():
+    """executor.arrange: from a position in the middle of a game back to the opening, nothing pushed."""
+    L = Layout()
+    frm = [0, 0, 7, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 0, 0, 2, 1, 0, 0, 0, -1, 0, 0]
+    b = SimBoard.with_board(frm, L, seed=1)
+    ex = Executor(b, L, grab_s=0, log=lambda *a: None)
+    ex.set_from_board(frm)
+    n = ex.arrange(rules.OPENING)
+    truth = b.checkers()
+    assert n <= 31 and b.bumps == 0 and not ex.warnings, (n, b.bumps, ex.warnings)
+    assert all(any(np.hypot(c[0] - xy[0], c[1] - xy[1]) < 6 and c[2] == s for c in truth)
+               for xy, s in L.place(rules.OPENING).values())
+
+
 def test_second_checker_does_not_hit_its_own_first():
     """3-3: 13/10*(2) onto a human blot - the second checker landing there is a plain move."""
     import gnubg
