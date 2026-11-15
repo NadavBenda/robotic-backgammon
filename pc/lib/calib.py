@@ -202,7 +202,7 @@ def view(img, c, px_per_mm=PX_PER_MM, xmax=410.0, ymax=420.0, board=True):
 BOARD_ALPHA = 0.15     # Nadav 13.11: 0.35 hid the photo too much
 
 
-NUM_MM = 16.0   # height of the column numbers on the top view, in board mm
+NUM_MM = 13.0   # height of the column numbers on the top view, in board mm
 
 
 def draw_board(top, f, L, alpha=BOARD_ALPHA):
