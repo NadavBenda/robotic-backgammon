@@ -5,8 +5,8 @@
 
   1. Put the checkers in the trays (place_trays.py shows you where).
   2. Enter = start    q = stop
-  3. The robot drags them one by one (around the others): the columns farthest from the
-     trays first, and in each column the checker at the edge first, then parks.
+  3. The robot drags them one by one (around the others), matched to the places so that the
+     total distance is small, in each column the checker at the edge first, then parks.
 """
 import sys  # noqa: E402
 from pathlib import Path as _P
@@ -37,21 +37,29 @@ def outer_first(L, xy):
     return (0 if d < 30 else 1, round(y / 10.0), d)
 
 
-def arrange(b, L, frm, to, log=print, ex=None):
+def arrange(b, L, frm, to, log=print, ex=None, match=True):
     """Drag every checker from the board `frm` (where they are, at their exact places) to
-    the board `to`, in order(). Returns the executor (its warnings) and the number of drags.
+    the board `to`. Returns the executor (its warnings) and the number of drags.
+    match (Nadav 15.11): the checkers are matched to the places for the smallest total
+    distance (executor.arrange, the Hungarian method) and the shortest clean drag goes first;
+    a column is still filled from the edge inward. Simulator, trays to the opening: 9.6 m of
+    dragging instead of 11.0 m, nothing pushed.
+    match=False: the order of 14.11 (order(): the farthest columns first, the outer tray row first).
     ex: an executor to use (the game's own, so its page shows the drags)."""
     from executor import Executor
     ex = ex or Executor(b, L, log=lambda *a: None)
     ex.set_from_board(frm)
     n = 0
-    for where, i, xy, side in order(L, to, frm):
-        src = [k for k in ex.places if str(k).endswith(side) and not isinstance(k, int) and ex.places[k]]
-        if not src:
-            log(f"   no {side} checker left to put on {where}")
-            continue
-        ex.move_checker(src[0], where, side, goal=tuple(xy), pick=lambda xy_, L=L: outer_first(L, xy_))
-        n += 1
+    if match:
+        n = ex.arrange(to)
+    else:
+        for where, i, xy, side in order(L, to, frm):
+            src = [k for k in ex.places if str(k).endswith(side) and not isinstance(k, int) and ex.places[k]]
+            if not src:
+                log(f"   no {side} checker left to put on {where}")
+                continue
+            ex.move_checker(src[0], where, side, goal=tuple(xy), pick=lambda xy_, L=L: outer_first(L, xy_))
+            n += 1
     ex.park(L.park())
     for w in ex.warnings:
         log("   warning: " + w)
