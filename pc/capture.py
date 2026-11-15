@@ -26,7 +26,7 @@ def main():
 
     with Board(sys.argv[1] if len(sys.argv) > 1 else None) as b:
         print("Connected:", b.status())
-        while input("Enter = photo, q = quit: ").strip().lower() != "q":
+        while input("Enter = photo\nq = quit\n> ").strip().lower() != "q":
             t0 = time.time()
             jpeg = b.capture()
             path = out / time.strftime("%Y%m%d_%H%M%S.jpg")

@@ -90,7 +90,7 @@ def main():
     L = Layout.load()
     c = calib.load()
     print(__doc__.split("\n\n")[1])
-    if input("All 30 checkers in the trays?  Enter = start   q = stop: ").strip().lower() == "q":
+    if input("All 30 checkers in the trays?\n   Enter = start\n   q = stop\n> ").strip().lower() == "q":
         return
     frm, to = ALL_OUT, rules.OPENING
     with Board() as b:
