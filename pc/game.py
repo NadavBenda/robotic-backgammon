@@ -8,6 +8,9 @@ Everything is chosen on the page (Settings), not with flags:
             robot vs robot  - demo / video: the robot plays and moves both sides
             watch           - two people play; the robot reads, checks and logs every move
                               (and, with Coach on, shows what gnubg would have played)
+            remote          - a person far away plays the robot's side from a phone, over a
+                              secret link (remote.py); the robot moves their checkers, you play
+                              yours by hand as against the robot (Nadav 16.11)
   Engine    gnubg (strong, ~1 s) -> simple (built in, weak) if gnubg is missing -> random
   Dice      the robot's are always digital. A person's: digital (the PC rolls) / typed (real
             dice, typed on the page) / camera (real dice rolled anywhere on the glass, found
@@ -68,7 +71,7 @@ RECORD = True         # keep events.jsonl in the game's folder (for make_video.p
 ALL_OUT = [0] * 26    # every checker in the bear-off trays (as place_trays.py leaves them)
 
 DEFAULTS = {
-    "mode": "robot_vs_human",    # robot_vs_human | robot_vs_robot | watch
+    "mode": "robot_vs_human",    # robot_vs_human | robot_vs_robot | watch | remote
     "engine": "gnubg",           # gnubg | simple | random
     "dice": "digital",           # digital | typed | camera
     "human_move": "done_button",  # done_button | robot_moves
@@ -85,6 +88,10 @@ class Restart(Exception):
 SWAP_PHASES = ("idle", "setup", "over", "error")   # when the page's swap button works
 TURN_CCW = True   # the page's drawing and photo turned 90 degrees counter-clockwise (Nadav 15.11:
                   # the laptop stands beside the box); False = as before
+
+
+def mode_is_remote(s):
+    return s.get("mode") == "remote"
 
 
 def mirrored(b):
@@ -123,6 +130,9 @@ class Game:
         self.ex = None
         self.last_board = None      # where the last game stopped (the robot can arrange the opening from it)
         self.cooling_s = 0          # the magnet is cooling before the next drag: about this many seconds
+        self.remote_name = "Guest"  # remote mode: the name the far player typed on the phone
+        self.host_name = "Nadav"    # remote mode: how the far player's page calls the person at the board
+        self.remote = None          # remote mode: remote.Remote (the phone page and its link), set by webui
         import helpers
         helpers.on_cooling = self.cooling
         self.reset_state()
@@ -154,6 +164,8 @@ class Game:
         self.tape, self.tape_key = [], None   # the game as the page showed it, for make_video.py (events.jsonl)
         self.shots = []                    # photos taken before the first move (the folder is made then)
         self.shot_n = 0                    # running number of the game's photos
+        self.remote_plays = []             # remote mode: the far player's legal moves [(text, steps)]
+        self.remote_hint = None            # remote mode: gnubg's choice for the far player (their Suggest button)
 
     def name(self, side):
         mode = self.s["mode"]
@@ -161,11 +173,13 @@ class Game:
             return "Robot A" if side == "robot" else "Robot B"
         if mode == "watch":
             return "Player 1" if side == "robot" else "Player 2"
+        if mode == "remote" and side == "robot":
+            return self.remote_name
         return "Robot" if side == "robot" else "You"
 
     def players(self):
         mode = self.s["mode"]
-        return {"robot": {"name": self.name("robot"), "kind": "person" if mode == "watch" else "computer"},
+        return {"robot": {"name": self.name("robot"), "kind": "person" if mode in ("watch", "remote") else "computer"},
                 "human": {"name": self.name("human"), "kind": "computer" if mode == "robot_vs_robot" else "person"}}
 
     def snapshot(self):
@@ -183,7 +197,8 @@ class Game:
                     "paths": [[[round(x, 1), round(y, 1)] for x, y in p] for p in self.paths],
                     "players": self.players(), "robot_white": self.robot_white, "edge": self.edge(),
                     "can_swap": not self.busy and self.phase in SWAP_PHASES,
-                    "cooling": self.cooling_s}
+                    "cooling": self.cooling_s,
+                    "remote": self.remote.status() if self.remote and mode_is_remote(self.s) else None}
 
     def edge(self):
         """Who is ahead, for the page's bar: {'robot': chance 0..1 that the 'robot' side wins,
@@ -299,6 +314,8 @@ class Game:
         if action.get("name") == "settings":
             with self.lock:
                 self.s.update({k: v for k, v in action.get("values", {}).items() if k in DEFAULTS})
+            if self.remote and mode_is_remote(self.s):
+                self.remote.start_link()     # the secret link is made as soon as the mode is chosen
             return
         self.inbox.put(action)
 
@@ -632,6 +649,51 @@ class Game:
         # the robot's move is taken as carried out (Nadav 15.11): no reading, no stop
         note = self.after_robot(before, expected)
         self.record(side, d, steps, before, expected, note)
+
+    def remote_turn(self):
+        """The far player's turn (remote mode): they roll and pick the move on their phone (or
+        tap checkers there), the robot drags their checkers. The page at the board can roll and
+        pick for them too, if their phone drops out."""
+        who = self.name("robot")
+        self.drain()
+        self.say(f"{who}'s turn: waiting for {who} to roll", "remote_roll", ["remote_roll"])
+        self.wait("remote_roll")
+        d = dice_mod.digital()
+        with self.lock:
+            self.dice = list(d)
+        board0 = list(self.board)
+        plays = rules.legal_moves(board0, d)
+        if not plays[0][0]:
+            self.say(f"{who}: no legal move", "robot_move", info=f"{who} rolled {d[0]}-{d[1]}: no legal move")
+            self.record("robot", d, [], board0, board0, "no legal move")
+            time.sleep(NO_MOVE_S)
+            return
+        self.say(f"{who} rolled {d[0]}-{d[1]}…", "remote_roll")
+        try:
+            hint, _ = self.choose(board0, d, "robot")    # their Suggest button, and the who-is-ahead bar
+            hint = rules.move_text(hint)
+        except Exception as e:
+            self.log_fn(f"hint: {e}")
+            hint = None
+        with self.lock:
+            self.remote_plays = [(rules.move_text(s), s) for s, _ in plays]
+            self.remote_hint = hint
+            self.legal = sorted(t for t, _ in self.remote_plays)
+        self.drain()
+        self.say(f"{who} is choosing a move…", "remote_move", ["move_pick"])
+        while True:
+            a = self.wait("remote_move", "move")
+            hit = [(s, nb) for s, nb in plays if rules.move_text(s) == a.get("value")]
+            if hit:
+                break
+        steps, nb = hit[0]
+        with self.lock:
+            self.legal, self.remote_plays, self.remote_hint = [], [], None
+        self.say(f"The robot moves {who}'s checkers…", "robot_move",
+                 info=f"{who} rolled {d[0]}-{d[1]}, plays {self.shown(steps, 'robot')} (from far away)")
+        self.ex.play(steps, side="robot")
+        note = self.after_robot(board0, list(nb))
+        self.record("robot", d, steps, board0, list(nb), ("played from the phone; " + note).rstrip("; "))
 
     def after_robot(self, board0, expected):
         """The known board becomes `expected`; a photo of it (the 'before' of the next move).
@@ -992,7 +1054,9 @@ class Game:
                 self.turn = who
                 self.coach = None
             if who == "robot":
-                if mode == "watch":
+                if mode == "remote":
+                    self.remote_turn()
+                elif mode == "watch":
                     self.human_turn("robot")      # 'robot' side played by a second person
                 else:
                     self.robot_turn("robot")
@@ -1016,7 +1080,7 @@ class Game:
             if b[25] < 0 or any(n < 0 for n in b[1:7]):
                 kind, pts = "backgammon", 3
         # the page plays a fanfare, or a sad tune when a person lost to the robot
-        lost = self.s["mode"] == "robot_vs_human" and who == "robot"
+        lost = self.s["mode"] in ("robot_vs_human", "remote") and who == "robot"
         with self.lock:
             self.winner = {"who": who, "kind": kind, "points": pts, "lost": lost}
         n = self.name(who)

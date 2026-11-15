@@ -61,7 +61,7 @@ Also from a phone on the same WiFi (the address is printed).
 |---|---|---|
 | `dice_test.py` | tries the camera on real dice: roll on the glass, it reads, you say what they show; photos and a score in dice_test/ | |
 | `make_video.py` | a film (mp4, 1080 x 1080) of the newest game as the page showed it, at the speed it was played, to put next to the real video; game.py records `events.jsonl` for it by itself | SPEED, MAX_WAIT, SIZE at the top of the file |
-| `game.py` | turns, dice, reading the human's move, end of game, log in `games/<date-time>/` | mode: robot vs human / robot vs robot (demo) / watch (two people, the robot checks); human move: "I'm done" button / pick it on the page and the robot moves it. The game never looks for checkers in the photo: it starts from the opening and reads a person's move from what changed between two photos |
+| `game.py` | turns, dice, reading the human's move, end of game, log in `games/<date-time>/` | mode: robot vs human / robot vs robot (demo) / watch (two people, the robot checks) / remote (a person far away plays the robot's side from a phone over a secret link, `lib/remote.py`; the robot moves their checkers); human move: "I'm done" button / pick it on the page and the robot moves it. The game never looks for checkers in the photo: it starts from the opening and reads a person's move from what changed between two photos |
 | `webui.py` | the page + terminal fallback (n, d, 52, ...) | |
 | `rules.py` | legal moves, simple engine, find the move between two boards | engine: gnubg / simple / random |
 | `layout.py` | where each checker goes, in mm (points, bar, bear-off trays, dice zone, park spot) | defaults from plan v4 fitted to 410x420; `teach_layout.py` fits it to the real board in 4 clicks |

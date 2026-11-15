@@ -7,6 +7,7 @@ GET  /state      the game as JSON (the page asks twice a second)
 GET  /top.jpg    the last photo as a top view, the known board circled, the robot's paths
 GET  /photo.jpg  the last photo as the camera took it (upside down, like the drawing)
 POST /action     {"name": "new" | "done" | "dice" | ..., "value": ...}
+Mode = remote: remote.py serves the far player's phone page on its own port, behind a secret link.
 
 The terminal works too (for when the page is not open): type
   n = new game   s = start   g = robot arranges from the trays   d = done   r = read again
@@ -105,7 +106,10 @@ body.ccw .pic{aspect-ratio:460/450}
 .grid{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center}
 .low{display:grid;gap:10px}
 .tog{padding:4px 8px;font-size:15px;line-height:1}
-body.clean .low,body.clean #newbtn,body.clean #log,body.clean .camnote,body.clean #sim{display:none}
+#remote{display:flex;flex-wrap:wrap;gap:10px;align-items:center}#remote[hidden]{display:none}
+#remote code{background:#0008;padding:6px 10px;border-radius:8px;font-size:13px;word-break:break-all;flex:1 1 260px}
+.dot{width:10px;height:10px;border-radius:50%;display:inline-block;background:#6b6256;margin-right:6px}.dot.on{background:#4cd964;box-shadow:0 0 8px #4cd964}
+body.clean #remote,body.clean .low,body.clean #newbtn,body.clean #log,body.clean .camnote,body.clean #sim{display:none}
 details.card{padding:10px 14px}summary{cursor:pointer}
 .warn{color:var(--warn);font-size:13px}
 #edask{position:fixed;z-index:9;background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:8px;box-shadow:0 4px 14px #0008;display:flex;flex-direction:column;gap:6px;font-size:13px}
@@ -139,6 +143,9 @@ details.card{padding:10px 14px}summary{cursor:pointer}
  </div>
  <div class="dicecol" id="dice"></div>
 </section>
+<section class="card" id="remote" hidden><h2 style="flex-basis:100%;margin:0">Link for the far player</h2>
+ <span id="rm-on"><span class="dot"></span></span><code id="rm-link">…</code><button class="sec" id="rm-copy">Copy</button>
+ <div class="hint" id="rm-note"></div></section>
 <section class="pair">
  <div class="card"><h2>The game</h2>
   <div class="pic"><svg id="board" viewBox="-20 -20 450 460" preserveAspectRatio="none"></svg></div>
@@ -155,12 +162,12 @@ details.card{padding:10px 14px}summary{cursor:pointer}
   <div id="warns"></div>
 </section></main><div id="confetti"></div>
 <script>
-const OPTS={mode:["robot_vs_human","robot_vs_robot","watch"],engine:["gnubg","simple","random"],
+const OPTS={mode:["robot_vs_human","robot_vs_robot","watch","remote"],engine:["gnubg","simple","random"],
  dice:["digital","typed","camera"],human_move:["done_button","robot_moves"],
  coach:[false,true],first:["human","robot","roll"],board:["auto","real","sim"]};
 const NAMES={mode:"Mode",engine:"Engine",dice:"Dice",human_move:"Your move",coach:"Coach",first:"Who starts",board:"Board"};
 const BTN={new:"New game",done:"I'm done",accept:"Accept",reread:"Read again",start:"Start",
- arrange:"Robot arranges from the trays",rearrange:"Robot arranges from the last game",go:"Yes, go",cancel:"Cancel",undo:"Undo last move",replay:"I put them back, play again",rolled:"Rolled"};
+ arrange:"Robot arranges from the trays",rearrange:"Robot arranges from the last game",go:"Yes, go",cancel:"Cancel",undo:"Undo last move",replay:"I put them back, play again",rolled:"Rolled",remote_roll:"Roll for them"};
 let S=null, built=false, lastPhoto=0, ED=null, PEND=null;
 // -- the board is drawn as the corrected camera photo shows it: frame mm (x, y from the near side)
 // -> magnet mm (x right, y down) through the layout's own map (s.frame), 1 unit = 1 mm --
@@ -316,6 +323,17 @@ function paintPlayers(s){for(const side of ["robot","human"]){const p=s.players[
   document.getElementById("pl-"+side).classList.toggle("on",!s.winner&&s.turn===side||!!s.winner&&s.winner.who===side)}}
 document.getElementById("swapbtn").onclick=()=>{if(!S||!S.can_swap)return;post({name:"swap_colours"});
  paintPlayers(S);if(ED)drawEdit(S);else drawBoard(S)};
+// -- remote mode: the far player's secret link, and whether their phone is on --
+function paintRemote(s){const box=document.getElementById("remote"),r=s.remote;box.hidden=!r;if(!r)return;
+ const st={off:"Starting…",starting:"Making the link…",downloading:"Downloading the link tool (once, about a minute)…",
+  failed:"No link: "+(r.error||"")+". Choose the mode again in Settings to retry",on:""}[r.state]||"";
+ document.getElementById("rm-link").textContent=r.link||st;
+ document.getElementById("rm-on").innerHTML=`<span class="dot${r.online?" on":""}"></span>${r.online?r.name+" is online":"not connected"}`;
+ document.getElementById("rm-note").textContent=r.link?"Send it only to them: whoever has it plays your robot's side. A new link every time the game starts; it stops when you close it. Video mode hides it.":st}
+document.getElementById("rm-copy").onclick=ev=>{const l=S&&S.remote&&S.remote.link;if(!l)return;
+ const done=()=>{ev.target.textContent="Copied";setTimeout(()=>ev.target.textContent="Copy",1500)};
+ if(navigator.clipboard&&window.isSecureContext)navigator.clipboard.writeText(l).then(done);
+ else{const t=el("textarea");t.value=l;document.body.append(t);t.select();document.execCommand("copy");t.remove();done()}};
 let newArmed=0, lastWin=null, lastMine=false;
 function newGame(b){if(S&&S.turn&&!S.winner&&Date.now()>newArmed){newArmed=Date.now()+3000;b.textContent="Stop this game? Click again";
   setTimeout(()=>{b.textContent="New game"},3000);return}
@@ -367,6 +385,7 @@ function render(s){S=s;if(!built){buildSettings(s.settings);built=true}
   document.getElementById("edge-pl").innerHTML="<b>"+pr+"%</b>"+s.pips[0]+" to go";
   document.getElementById("edge-pr").innerHTML="<b>"+(100-pr)+"%</b>"+s.pips[1]+" to go";
   eg.title="Chance to win, by "+s.edge.by+(s.edge.by==="pip count"?" (the race only: hits and blocks are not counted)":"")}
+ paintRemote(s);
  document.getElementById("coach").textContent=s.coach||"";
  document.getElementById("info").textContent=s.info||"";
  const lg=document.getElementById("log");lg.innerHTML="";
@@ -463,6 +482,13 @@ def lan_ip():
 
 def main(settings=None, open_browser=True, port=PORT):
     game = Game(settings)
+    try:
+        import remote
+        game.remote = remote.Remote(game, log=print)
+        if game.s["mode"] == "remote":
+            game.remote.start_link()
+    except OSError as e:     # the port is taken: the game still works, only without remote play
+        print(f"remote play is off: {e}")
     srv = ThreadingHTTPServer(("0.0.0.0", port), make_handler(game))
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     url = f"http://localhost:{port}"
@@ -477,6 +503,8 @@ def main(settings=None, open_browser=True, port=PORT):
         pass
     finally:
         srv.shutdown()
+        if game.remote:
+            game.remote.stop()
         if game.b is not None:
             try:
                 game.b.close()
