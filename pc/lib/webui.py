@@ -140,7 +140,7 @@ const OPTS={mode:["robot_vs_human","robot_vs_robot","watch"],engine:["gnubg","si
  dice:["digital","typed","camera"],human_move:["done_button","robot_moves"],
  coach:[false,true],first:["human","robot","roll"],board:["auto","real","sim"]};
 const NAMES={mode:"Mode",engine:"Engine",dice:"Dice",human_move:"Your move",coach:"Coach",first:"Who starts",board:"Board"};
-const BTN={new:"New game",done:"Done",accept:"Accept",reread:"Read again",start:"Start",
+const BTN={new:"New game",done:"I'm done",accept:"Accept",reread:"Read again",start:"Start",
  arrange:"Robot arranges from the trays",rolled:"Rolled"};
 let S=null, built=false, lastPhoto=0, ED=null, PEND=null;
 // -- the board is drawn as the corrected camera photo shows it: frame mm (x, y from the near side)
@@ -336,7 +336,7 @@ function render(s){S=s;if(!built){buildSettings(s.settings);built=true}
 async function tick(){try{render(await (await fetch("/state")).json())}catch(e){}setTimeout(tick,300)}
 document.getElementById("board").addEventListener("click",edPlace);
 document.getElementById("newbtn").onclick=ev=>newGame(ev.currentTarget);
-document.addEventListener("keydown",ev=>{// Enter = Done, when Done is offered and nothing is being typed
+document.addEventListener("keydown",ev=>{// Enter = I'm done, when it is offered and nothing is being typed
  if(ev.key!=="Enter"||!S||!S.asks.includes("done")||S.busy||PEND)return;
  const t=document.activeElement&&document.activeElement.tagName;if(t==="INPUT"||t==="SELECT"||t==="BUTTON"||t==="TEXTAREA")return;
  ev.preventDefault();post({name:"done"})});

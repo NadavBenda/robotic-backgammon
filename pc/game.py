@@ -11,7 +11,7 @@ Everything is chosen on the page (Settings), not with flags:
   Engine    gnubg (strong, ~1 s) -> simple (built in, weak) if gnubg is missing -> random
   Dice      digital (the PC rolls) / typed (real dice, you type them) / camera (real dice
             in the dice zone, read from below; you can correct it)
-  Your move by hand + "Done" button / pick it on the page and the robot moves your
+  Your move by hand + "I'm done" button / pick it on the page and the robot moves your
             checkers (remote play, or nobody wants to touch the board)
 
 The game never looks for checkers in the photo (Nadav 15.11). It starts from the opening
@@ -535,7 +535,7 @@ class Game:
         self.drain()
         if not plays[0][0]:
             # nothing to play: the person still presses Done, so the turn never passes unseen (Nadav 15.11)
-            self.say(f"No legal move for {d[0]}-{d[1]}. Press Done", "human_move", ["done"])
+            self.say(f"No legal move for {d[0]}-{d[1]}. Press I'm done", "human_move", ["done"])
             self.wait("done")
             self.record(side, d, [], self.board, self.board, "no legal move")
             return
@@ -565,7 +565,7 @@ class Game:
             return
 
         if self.is_sim:   # nobody's hand in the simulator: the page's picker moves "by hand"
-            self.say(f"{yours} turn (simulator): pick the move, then Done", "human_move", ["move_pick", "done"])
+            self.say(f"{yours} turn (simulator): pick the move, then I'm done", "human_move", ["move_pick", "done"])
         else:
             self.say(f"{yours} turn", "human_move", ["done"])
         while True:
@@ -631,7 +631,7 @@ class Game:
                     if st.hit:
                         self._hand(ghost, to_key, f"bar_{opp}")
                     self._hand(ghost, ghost._key(st.frm, side), to_key)
-                self.say("Moved (simulated hand). Press Done", asks=["done"])
+                self.say("Moved (simulated hand). Press I'm done", asks=["done"])
                 return
 
     def _hand(self, ex, frm, to):
