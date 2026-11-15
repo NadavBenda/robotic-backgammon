@@ -147,7 +147,7 @@ def fit(px, mm, deg=2, size=OLD_SIZE):
 EDGE_MM = 13.0           # checker radius: the frame in the top view is this far outside the magnet travel
 
 
-def topdown(img, c, px_per_mm=1.0, xmax=410.0, ymax=420.0, margin=20.0):
+def topdown(img, c, px_per_mm=1.0, xmax=410.0, ymax=420.0, margin=20.0, frame=True):
     """The photo as if taken straight from above: lens distortion, tilt and mirror removed.
     Pixel (i, j) of the result is board mm (x0 + j / px_per_mm, y0 + i / px_per_mm) with
     x0 = y0 = -margin, so x grows to the right and y downward. Straight lines on the
@@ -162,8 +162,9 @@ def topdown(img, c, px_per_mm=1.0, xmax=410.0, ymax=420.0, margin=20.0):
     # the board's edge as a thin frame: the outer edge of a checker that stands at the end of
     # the magnet's travel, not the magnet's centre (Nadav 15.11)
     k, e = px_per_mm, EDGE_MM
-    cv2.rectangle(out, (int((margin - e) * k), int((margin - e) * k)),
-                  (int((xmax + margin + e) * k), int((ymax + margin + e) * k)), (0, 200, 255), 1)
+    if frame:
+        cv2.rectangle(out, (int((margin - e) * k), int((margin - e) * k)),
+                      (int((xmax + margin + e) * k), int((ymax + margin + e) * k)), (0, 200, 255), 1)
     return out
 
 

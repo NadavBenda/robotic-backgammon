@@ -309,8 +309,9 @@ function render(s){S=s;if(!built){buildSettings(s.settings);built=true}
  const key=JSON.stringify([s.asks,s.legal.length,s.likely,!!s.winner,s.phase]);
  if(a.dataset.k!==key&&!(keep&&a.dataset.a===JSON.stringify(s.asks))){a.innerHTML="";a.dataset.k=key;a.dataset.a=JSON.stringify(s.asks);
   for(const k of s.asks){
-   if(k==="dice_input"){const i=el("input",{placeholder:"dice, e.g. 5 2",size:8});
-    a.append(i,el("button",{text:"OK",onclick:()=>post({name:"dice",value:i.value})}))}
+   if(k==="dice_input"){const fix=s.asks.includes("done"),i=el("input",{placeholder:fix?"wrong dice? e.g. 5 2":"dice, e.g. 5 2",size:fix?15:8});
+    i.onkeydown=ev=>{if(ev.key==="Enter"){ev.preventDefault();post({name:"dice",value:i.value})}};
+    a.append(i,el("button",{class:fix?"sec":"",text:fix?"Fix dice":"OK",onclick:()=>post({name:"dice",value:i.value})}))}
    else if(k==="likely"){for(const m of s.likely)a.append(el("button",{text:m,onclick:()=>post({name:"move",value:m})}))}
    else if(k==="edit"){
     a.append(el("div",{class:"hint",text:"Or fix the drawing of the board: click a checker to take it off, the empty part of a column to add one, an empty column or the bar to choose whose."}),
@@ -319,7 +320,7 @@ function render(s){S=s;if(!built){buildSettings(s.settings);built=true}
    else if(k==="move_pick"){const sel=el("select");for(const m of s.legal)sel.append(el("option",{text:m}));
     a.append(sel,el("button",{class:s.asks.includes("likely")?"sec":"",text:s.asks.includes("likely")?"It was this one":"Play this",onclick:()=>post({name:"move",value:sel.value})}))}
    else if(k==="new")a.append(el("button",{class:"big",text:"New game",onclick:()=>post({name:"new"})}));
-   else a.append(el("button",{class:(k==="done"||k==="start")?"big":(k==="reread"||k==="arrange"||k==="rearrange"||k==="cancel")?"sec":"",text:BTN[k]||k,onclick:()=>post({name:k})}))}
+   else a.append(el("button",{class:(k==="done"||k==="start"||k==="rolled")?"big":(k==="reread"||k==="arrange"||k==="rearrange"||k==="cancel")?"sec":"",text:BTN[k]||k,onclick:()=>post({name:k})}))}
   if(s.phase==="idle")a.append(el("button",{class:"big",text:"New game",onclick:()=>post({name:"new"})}))}
  document.getElementById("newbtn").hidden=s.phase==="idle"||s.asks.includes("new");
  paintPlayers(s);

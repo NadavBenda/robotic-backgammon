@@ -9,8 +9,10 @@ Everything is chosen on the page (Settings), not with flags:
             watch           - two people play; the robot reads, checks and logs every move
                               (and, with Coach on, shows what gnubg would have played)
   Engine    gnubg (strong, ~1 s) -> simple (built in, weak) if gnubg is missing -> random
-  Dice      digital (the PC rolls) / typed (real dice, you type them) / camera (real dice
-            in the dice zone, read from below; you can correct it)
+  Dice      the robot's are always digital. A person's: digital (the PC rolls) / typed (real
+            dice, typed on the page) / camera (real dice rolled anywhere on the glass, found
+            by what changed since the last photo and read from below; press Rolled, take
+            them off and play; a wrong reading is fixed by typing the dice on the page)
   Your move by hand + "I'm done" button / pick it on the page and the robot moves your
             checkers (remote play, or nobody wants to touch the board)
 
@@ -398,14 +400,17 @@ class Game:
         return rules.best_move_simple(board, dice_), "simple"
 
     # -- dice -----------------------------------------------------------------------
-    def roll(self, who):
-        who = self.name(who)
-        how = self.s["dice"]
+    def roll(self, side, person=False):
+        """The dice of `side`. The robot's are always digital; a person's are digital, typed,
+        or real dice rolled on the glass and read by the camera (Nadav 15.11)."""
+        who = self.name(side)
+        how = self.s["dice"] if person else "digital"
         if how == "digital":
             d = dice_mod.digital()
         elif how == "camera":
-            self.say(f"{who}: roll the dice in the dice zone, then press Rolled", f"{who}_dice",
-                     ["rolled", "dice_input"])
+            ask = "Roll the dice on the glass, then press Rolled"
+            self.drain()
+            self.say(ask if who == "You" else f"{who}: {ask[0].lower()}{ask[1:]}", f"{side}_dice", ["rolled", "dice_input"])
             while True:
                 a = self.wait("rolled", "dice")
                 if a["name"] == "dice":
@@ -413,18 +418,15 @@ class Game:
                     if d:
                         break
                     continue
-                img = self.photo_img()
-                d = dice_mod.from_photo(img, self.c, self.L)
+                self.say("Reading the dice…", f"{side}_dice")
+                d = self.read_dice()
                 if d:
-                    self.say(f"Camera reads {d[0]}-{d[1]}. OK?", asks=["accept", "dice_input"])
-                    a = self.wait("accept", "dice")
-                    if a["name"] == "dice" and dice_mod.parse(a.get("value", "")):
-                        d = dice_mod.parse(a["value"])
                     break
-                self.say("Could not read the dice. Type them, or roll again and press Rolled",
-                         asks=["rolled", "dice_input"])
+                self.say("I can't read the dice. Roll again and press Rolled, or type them",
+                         f"{side}_dice", ["rolled", "dice_input"])
         else:
-            self.say(f"{who}: roll and type the dice", f"{who}_dice", ["dice_input"])
+            self.say(f"{who}: roll and type the dice" if who != "You" else "Roll and type the dice",
+                     f"{side}_dice", ["dice_input"])
             while True:
                 a = self.wait("dice")
                 d = dice_mod.parse(a.get("value", ""))
@@ -434,6 +436,28 @@ class Game:
         with self.lock:
             self.dice = list(d)
         return tuple(d)
+
+    def read_dice(self):
+        """Real dice on the glass: a photo, compared with the last photo of the board (taken
+        before they were rolled). The photo is kept with the game's photos; it does not
+        become the 'before' of the move."""
+        if self.is_sim:   # the simulator "rolls" two dice in the middle lane
+            self.b.dice, self.b.dice_look = dice_mod.digital(), {"zone": (160.0, 150.0, 250.0, 190.0)}
+        img = self.photo_img()
+        if self.is_sim:
+            self.b.dice = None
+        try:
+            d = dice_mod.read(self.last_img, img, self.c, self.L, checkers=[xy for xy, _ in self.where()])
+        except Exception as e:
+            self.log_fn(f"dice: {e}")
+            d = None
+        self.log_fn(f"dice read: {d}")
+        if self.logfile:
+            name = f"{self.shot_n:03d}_move{len(self.history):02d}_dice{''.join(map(str, d)) if d else 'x'}.jpg"
+            self.shot_n += 1
+            self.shots = (self.shots + [(name, cv2.imencode(".jpg", img)[1])])[-6:]
+            self.flush_shots()
+        return d
 
     # -- turns ---------------------------------------------------------------------
     def flush_shots(self):
@@ -525,8 +549,14 @@ class Game:
         return (len(b) == 26 and sum(v for v in b if v > 0) <= 15 and -sum(v for v in b if v < 0) <= 15
                 and b[0] >= 0 and b[25] <= 0)
 
-    def human_turn(self, side="human"):
-        d = self.roll(side)
+    def human_turn(self, side="human", d=None):
+        """d: the dice, when the person corrected them on the page in the middle of the turn."""
+        real = self.s["dice"] != "digital"       # real dice: they can be corrected until I'm done
+        if d is None:
+            d = self.roll(side, person=True)
+        else:
+            with self.lock:
+                self.dice = list(d)
         who = self.name(side)
         yours = "Your" if who == "You" else who + "'s"
         hv = rules.flip(self.board) if side == "human" else list(self.board)
@@ -538,8 +568,11 @@ class Game:
         self.drain()
         if not plays[0][0]:
             # nothing to play: the person still presses Done, so the turn never passes unseen (Nadav 15.11)
-            self.say(f"No legal move for {d[0]}-{d[1]}. Press I'm done", "human_move", ["done"])
-            self.wait("done")
+            self.say(f"No legal move for {d[0]}-{d[1]}. Press I'm done", "human_move",
+                     ["done"] + (["dice_input"] if real else []))
+            a = self.wait("done", "dice")
+            if a["name"] == "dice":
+                return self.human_turn(side, dice_mod.parse(a.get("value", "")) or d)
             self.record(side, d, [], self.board, self.board, "no legal move")
             return
         texts = sorted(rules.move_text(s) for s, _ in plays)
@@ -570,9 +603,15 @@ class Game:
         if self.is_sim:   # nobody's hand in the simulator: the page's picker moves "by hand"
             self.say(f"{yours} turn (simulator): pick the move, then I'm done", "human_move", ["move_pick", "done"])
         else:
-            self.say(f"{yours} turn", "human_move", ["done"])
+            self.say(f"{yours} turn" + (": take the dice off the glass and play" if self.s["dice"] == "camera" else ""),
+                     "human_move", ["done"] + (["dice_input"] if real else []))
         while True:
-            a = self.wait("done", "move")
+            a = self.wait("done", "move", "dice")
+            if a["name"] == "dice":
+                fixed = dice_mod.parse(a.get("value", ""))
+                if fixed and real and not self.is_sim:
+                    return self.human_turn(side, fixed)
+                continue
             if a["name"] == "move" and self.is_sim:
                 self.sim_hand_move(hv, d, a.get("value"), side)
                 continue
