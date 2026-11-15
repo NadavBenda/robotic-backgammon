@@ -683,10 +683,17 @@ class Game:
         if redo:
             # the checkers may already stand as the move really was (it was read wrong): pick it.
             # Or the person wants another move: checkers back as drawn, then play again.
-            self.say("Undone. Which move did you really make?", "human_move", ["move_pick", "replay"],
+            # Undo again goes one more round back (Nadav 15.11: to film a nice move once more)
+            more = ["undo"] if self.can_undo(side) else []
+            self.say("Undone. Which move did you really make?", "human_move", ["move_pick", "replay"] + more,
                      info="Or put your checkers back as drawn here, press the button, and play again")
             while True:
-                a = self.wait("move", "replay")
+                a = self.wait("move", "replay", "undo")
+                if a["name"] == "undo":
+                    if more:
+                        self.sim_sync()
+                        return self.human_turn(side, self.undo(), redo=True)
+                    continue
                 if a["name"] == "replay":
                     self.sim_sync()
                     self.say("Taking a photo…", "reading", info="")
@@ -825,6 +832,9 @@ class Game:
         self.logfile = GAMES / f"{datetime.now():%Y%m%d-%H%M%S}" / "game.jsonl"
         with self.lock:
             self.board = list(rules.OPENING)
+        if self.is_sim and not self.last_board:   # the simulator's checkers "set up" for a new game
+            self.sim_board(rules.OPENING)
+            self.new_executor()
         self.ex.set_from_board(rules.OPENING)
         self.look()
         while True:

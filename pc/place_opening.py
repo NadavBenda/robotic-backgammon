@@ -16,6 +16,8 @@ sys.path.insert(0, str(_P(__file__).resolve().parent / "lib"))  # the internal c
 
 import time
 
+import numpy as np
+
 import paths
 import rules
 import ui
@@ -30,13 +32,30 @@ ALL_OUT = [0] * 26     # every checker borne off: 15 + 15 in the bear-off trays
 
 
 def spots(L, board=None):
-    """[(side, where, i, (x, y))] robot first, each point (or tray) from the board edge inward."""
+    """[(side, where, i, (x, y))] robot first, each point (or tray row) from the board edge
+    inward. The columns come in the order that keeps the cart's way short (Nadav 15.11): after
+    a column, the nearest column that is still empty (it starts from the park place)."""
     out = []
+    at = L.park()
     for side in ("robot", "human"):
+        cols = {}
         for (where, i), (xy, s) in sorted(L.place(rules.OPENING if board is None else board).items(),
                                           key=lambda kv: (str(kv[0][0]), kv[0][1])):
             if s == side:
-                out.append((side, where, i, xy))
+                # a bear-off tray has two rows: each row is a "column" of its own
+                row = (where, round(L.from_magnet(*xy)[1])) if str(where).startswith("off_") else (where, 0)
+                cols.setdefault(row, []).append((side, where, i, xy))
+        while cols:
+            def far(key):
+                first, last = cols[key][0][3], cols[key][-1][3]
+                return min(np.hypot(first[0] - at[0], first[1] - at[1]), np.hypot(last[0] - at[0], last[1] - at[1]))
+            key = min(cols, key=far)
+            col = cols.pop(key)
+            first, last = col[0][3], col[-1][3]
+            if str(key[0]).startswith("off_") and np.hypot(last[0] - at[0], last[1] - at[1]) < np.hypot(first[0] - at[0], first[1] - at[1]):
+                col = col[::-1]            # a tray row has no edge to start from: take the nearer end
+            out += col
+            at = col[-1][3]
     return out
 
 
