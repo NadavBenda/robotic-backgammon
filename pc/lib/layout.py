@@ -60,6 +60,8 @@ class Layout:
     affine: list = field(default=None)  # 2x3, from teach_layout.py; replaces flip_x/flip_y
     keepout: list = field(default_factory=list)  # [[x0, y0, x1, y1]] the magnet must not enter
     dice_zone: tuple = (172.0, -44.0, 238.0, -14.0)  # picture frame; beyond the near trays
+    mirror: bool = False           # True: the robot plays the other side's checkers (the page's swap
+                                   # button, Nadav 15.11): every place left <-> right; not saved
 
     # -- file -------------------------------------------------------------
     @classmethod
@@ -74,7 +76,9 @@ class Layout:
         return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
 
     def save(self, path=PATH):
-        Path(path).write_text(json.dumps(asdict(self), indent=1))
+        d = asdict(self)
+        d.pop("mirror", None)
+        Path(path).write_text(json.dumps(d, indent=1))
 
     # -- geometry in the "picture" frame, then mapped to magnet mm -------------
     def _row_y(self, k):
@@ -82,6 +86,10 @@ class Layout:
         return self.first_row_y + k * self.row_pitch
 
     def _nominal(self, where, i):
+        x, y = self._plain(where, i)
+        return (self.xmax - x if self.mirror else x), y
+
+    def _plain(self, where, i):
         left = lambda j: self.edge_x + j * self.pitch_x
         right = lambda j: self.xmax - self.edge_x - j * self.pitch_x
         if isinstance(where, int) or str(where).isdigit():
@@ -151,6 +159,8 @@ class Layout:
         'point' (key 1..24), 'bar' or 'off' (key 'robot' / 'human'), or None if it is
         farther than max_mm (default: one checker) from every row."""
         nx, ny = self.from_magnet(x, y)
+        if self.mirror:
+            nx = self.xmax - nx
         max_mm = self.checker if max_mm is None else max_mm
         mid = self.xmax / 2
         left = nx < mid
