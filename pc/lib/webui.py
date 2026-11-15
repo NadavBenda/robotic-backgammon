@@ -141,7 +141,7 @@ const OPTS={mode:["robot_vs_human","robot_vs_robot","watch"],engine:["gnubg","si
  coach:[false,true],first:["human","robot","roll"],board:["auto","real","sim"]};
 const NAMES={mode:"Mode",engine:"Engine",dice:"Dice",human_move:"Your move",coach:"Coach",first:"Who starts",board:"Board"};
 const BTN={new:"New game",done:"I'm done",accept:"Accept",reread:"Read again",start:"Start",
- arrange:"Robot arranges from the trays",rolled:"Rolled"};
+ arrange:"Robot arranges from the trays",rearrange:"Robot arranges from the last game",go:"Yes, go",cancel:"Cancel",rolled:"Rolled"};
 let S=null, built=false, lastPhoto=0, ED=null, PEND=null;
 // -- the board is drawn as the corrected camera photo shows it: frame mm (x, y from the near side)
 // -> magnet mm (x right, y down) through the layout's own map (s.frame), 1 unit = 1 mm --
@@ -319,7 +319,7 @@ function render(s){S=s;if(!built){buildSettings(s.settings);built=true}
    else if(k==="move_pick"){const sel=el("select");for(const m of s.legal)sel.append(el("option",{text:m}));
     a.append(sel,el("button",{class:s.asks.includes("likely")?"sec":"",text:s.asks.includes("likely")?"It was this one":"Play this",onclick:()=>post({name:"move",value:sel.value})}))}
    else if(k==="new")a.append(el("button",{class:"big",text:"New game",onclick:()=>post({name:"new"})}));
-   else a.append(el("button",{class:(k==="done"||k==="start")?"big":(k==="reread"||k==="arrange")?"sec":"",text:BTN[k]||k,onclick:()=>post({name:k})}))}
+   else a.append(el("button",{class:(k==="done"||k==="start")?"big":(k==="reread"||k==="arrange"||k==="rearrange"||k==="cancel")?"sec":"",text:BTN[k]||k,onclick:()=>post({name:k})}))}
   if(s.phase==="idle")a.append(el("button",{class:"big",text:"New game",onclick:()=>post({name:"new"})}))}
  document.getElementById("newbtn").hidden=s.phase==="idle"||s.asks.includes("new");
  paintPlayers(s);

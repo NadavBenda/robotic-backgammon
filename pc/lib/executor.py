@@ -260,11 +260,16 @@ class Executor:
         return time.time() - t0
 
     # -- set up a position -------------------------------------------------
-    def arrange(self, board, park=None, max_moves=80):
-        """Move the checkers that are not where `board` wants them. Uses the current
-        positions (set_from_reading first). Greedy: each wrong checker goes to the
-        nearest free target of its colour; a target taken by a wrong checker is freed
-        first. Returns the number of drags."""
+    def arrange(self, board, park=None, max_moves=80, match=True):
+        """Move the checkers that are not where `board` wants them, from the current positions
+        (set_from_board / set_from_reading first), with a small total distance (Nadav 15.11):
+        before every drag the wrong checkers of each colour are matched to that colour's free
+        places so that the sum of the distances is the smallest (assign(), the Hungarian
+        method), and the shortest matched drag that keeps the board tidy goes next (a column
+        is emptied from the top and filled from the edge). A place still taken by a wrong
+        checker waits for its turn; if all wait, one checker steps into the lane.
+        match=False: the way it was before (each checker to its nearest free place).
+        Returns the number of drags."""
         targets = {"robot": [], "human": []}
         slot_of = {}                                  # target xy -> (place, index in it)
         for (where, i), (xy, side) in self.L.place(board).items():
@@ -276,7 +281,7 @@ class Executor:
             current += [(p[0], p[1], side, where) for p in lst]
         if sum(1 for c in current if c[2] == "robot") < 15 or sum(1 for c in current if c[2] == "human") < 15:
             self.warnings.append("fewer than 15 checkers of a side seen; arranging what is there")
-        moves = 0
+        moves = stepped = 0
         cur = [list(c) for c in current]
         ok = lambda c, t: np.hypot(c[0] - t[0], c[1] - t[1]) < 6
         for _ in range(max_moves):
@@ -304,42 +309,150 @@ class Executor:
                 where, idx = slot_of[t]
                 return all((tuple(self.L.slot(where, k)) in done) or (tuple(self.L.slot(where, k)) not in slot_of)
                            for k in range(idx))
-            best = None
-            for rule in (3, 2, 1, 0):   # both rules; then only the lifting rule; only the filling rule; neither
+
+            # the match: every wrong checker of a colour with every free place of that colour,
+            # smallest total distance (in the simulator: 3.5% less dragging than nearest-first,
+            # 28 positions; matching only what can move right now gained nothing)
+            want = {}                                  # id(checker) -> the place matched to it
+            if match:
+                for s in targets:
+                    mine = [c for c in todo if c[2] == s]
+                    fill = free[s]
+                    if mine and fill:
+                        cost = [[float(np.hypot(c[0] - t[0], c[1] - t[1])) for t in fill] for c in mine]
+                        for i, j in enumerate(assign(cost)):
+                            if j is not None:
+                                want[id(mine[i])] = fill[j]
+
+            def shuts_in(c, t):
+                """A wrong checker stands in t's column nearer the edge: filling t would shut it in."""
+                where = slot_of[t][0]
+                e = self.L.slot(where, 0)
+                d = np.hypot(t[0] - e[0], t[1] - e[1])
+                return any(o is not c and o[3] == where and np.hypot(o[0] - e[0], o[1] - e[1]) < d - 1 for o in todo)
+
+            def drags(matched, rule):
+                """[(mm, checker, place)] shortest first. rule: 2 = lift only the top of a
+                column, 1 = fill a column from the edge."""
+                out = []
                 for c in todo:
                     if rule & 2 and not top_of_column(c):
                         continue
-                    for t in free[c[2]]:
+                    for t in ([want[id(c)]] if id(c) in want else []) if matched else free[c[2]]:
                         if rule & 1 and not fills_from_the_edge(t):
                             continue
                         if any(np.hypot(o[0] - t[0], o[1] - t[1]) < self.L.checker - 2 for o in cur if o is not c):
                             continue
-                        d = np.hypot(c[0] - t[0], c[1] - t[1])
-                        if best is None or d < best[0]:
-                            best = (d, c, t)
+                        if shuts_in(c, t):
+                            continue
+                        out.append((float(np.hypot(c[0] - t[0], c[1] - t[1])), c, t))
+                return sorted(out, key=lambda x: x[0])
+
+            # the matched place under both rules, then one rule; the same with any free place;
+            # then no rule. Only a drag with a clean way (not a straight push through others).
+            best, tried = None, set()
+            tiers = ([(True, 3)] if want else []) + [(False, r) for r in (3, 2, 1, 0)]
+            for matched, rule in tiers:
+                for d, c, t in drags(matched, rule)[:6]:
+                    if (id(c), t) in tried:
+                        continue
+                    tried.add((id(c), t))
+                    others = [tuple(o[:2]) for o in cur if o is not c]
+                    path, how = self.plan(tuple(c[:2]), tuple(t), others)
+                    if how != "straight":
+                        best = (c, t, path)
+                        break
+                    self.warnings.pop()            # plan() noted a straight drag that is not made
                 if best is not None:
                     break
-            if best is None:   # every free target is covered by a wrong checker: move one to the lane
-                c = todo[0]
+            if best is None:   # nothing can go cleanly: one wrong checker steps into the lane
                 lane = sum(self.L.lane_x()) / 2
-                t = self.L.to_magnet(lane, self.L._row_y(3 + moves % 7))
-                best = (0, c, t)
-            _, c, t = best
+                stepped += 1
+                for c in (todo if stepped <= 6 else []):
+                    t = self.L.to_magnet(lane, self.L._row_y(3 + moves % 7))
+                    others = [tuple(o[:2]) for o in cur if o is not c]
+                    if any(np.hypot(o[0] - t[0], o[1] - t[1]) < self.L.checker for o in others):
+                        continue
+                    path, how = self.plan(tuple(c[:2]), tuple(t), others)
+                    if how != "straight":
+                        best = (c, t, path)
+                        break
+                    self.warnings.pop()
+                if best is None:   # no clean way at all: the shortest drag to a free place, straight
+                    far = drags(False, 0) or [(0, todo[0], self.L.to_magnet(lane, self.L._row_y(3 + moves % 7)))]
+                    _, c, t = far[0]
+                    best = (c, t, self.plan(tuple(c[:2]), tuple(t), [tuple(o[:2]) for o in cur if o is not c])[0])
+            c, t, path = best
             others = [tuple(o[:2]) for o in cur if o is not c]
-            path, how = self.plan(tuple(c[:2]), tuple(t), others)
+            if self.on_path:
+                self.on_path(path)
             self.goto(tuple(c[:2]), others)
             paths.drag(self.b, path, overshoot=self._overshoot(path, others), grab_s=self.grab_s,
                        xmax=self.L.xmax, ymax=self.L.ymax, settle_s=self.settle_s,
                    corners=bool(self.grab_s))
+            self.dragged_mm += paths.length(path)
             c[0], c[1] = t
-            c[3] = slot_of[tuple(t)][0] if tuple(t) in slot_of else c[3]
+            c[3] = slot_of[tuple(t)][0] if tuple(t) in slot_of else f"bar_{c[2]}"
             self.cart = tuple(t)
             moves += 1
+            places, side_of = {}, {}       # where everything stands now (the game page follows it)
+            for o in cur:
+                places.setdefault(o[3], []).append([o[0], o[1]])
+                if isinstance(o[3], int):
+                    side_of[o[3]] = o[2]
+            self.places, self.side_of = places, side_of
         if park:
             self.set_from_board(board)
             self.park(park)
         self.set_from_board(board)
         return moves
+
+
+def assign(cost):
+    """The Hungarian method: cost[i][j] of giving row i the column j -> [column of each row]
+    (None for a row left without one, when there are more rows than columns), with the
+    smallest total cost. Plain Python, no SciPy; a few milliseconds for 15 x 15."""
+    n, m = len(cost), len(cost[0]) if cost else 0
+    if not n or not m:
+        return [None] * n
+    if n > m:                                   # more rows than columns: solve it the other way round
+        back = assign([[cost[i][j] for i in range(n)] for j in range(m)])
+        out = [None] * n
+        for j, i in enumerate(back):
+            out[i] = j
+        return out
+    INF = float("inf")
+    u, v, p, way = [0.0] * (n + 1), [0.0] * (m + 1), [0] * (m + 1), [0] * (m + 1)
+    for i in range(1, n + 1):
+        p[0], j0 = i, 0
+        minv, used = [INF] * (m + 1), [False] * (m + 1)
+        while True:
+            used[j0] = True
+            i0, delta, j1 = p[j0], INF, 0
+            for j in range(1, m + 1):
+                if not used[j]:
+                    cur = cost[i0 - 1][j - 1] - u[i0] - v[j]
+                    if cur < minv[j]:
+                        minv[j], way[j] = cur, j0
+                    if minv[j] < delta:
+                        delta, j1 = minv[j], j
+            for j in range(m + 1):
+                if used[j]:
+                    u[p[j]] += delta
+                    v[j] -= delta
+                else:
+                    minv[j] -= delta
+            j0 = j1
+            if p[j0] == 0:
+                break
+        while j0:
+            p[j0] = p[way[j0]]
+            j0 = way[j0]
+    out = [None] * n
+    for j in range(1, m + 1):
+        if p[j]:
+            out[p[j] - 1] = j - 1
+    return out
 
 
 def expected_after(board, steps):

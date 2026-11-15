@@ -103,6 +103,7 @@ class Game:
         self.c = None
         self.is_sim = False
         self.ex = None
+        self.last_board = None      # where the last game stopped (the robot can arrange the opening from it)
         self.reset_state()
 
     # -- state shown on the page ---------------------------------------------
@@ -662,11 +663,16 @@ class Game:
         self.look()
         while True:
             self.drain()
-            self.say("Set up the opening position, then press Start", "setup", ["start", "arrange"])
-            a = self.wait("start", "arrange")
+            again = bool(self.last_board) and self.last_board != rules.OPENING
+            self.say("Set up the opening position, then press Start", "setup",
+                     ["start", "arrange"] + (["rearrange"] if again else []))
+            a = self.wait("start", "arrange", "rearrange")
             if a["name"] == "start":
                 break
-            self.arrange_opening()
+            if a["name"] == "rearrange":
+                self.arrange_from_last()
+            else:
+                self.arrange_opening()
         self.say("Starting…", "setup")
         self.look()
         self.find_side_colours()
@@ -688,6 +694,33 @@ class Game:
         self.log_fn(f"arranged with {n} drags")
         with self.lock:
             self.board = list(rules.OPENING)
+        self.ex.set_from_board(rules.OPENING)
+        self.look()
+
+    def arrange_from_last(self):
+        """The robot arranges the opening from where the last game stopped (Nadav 15.11): the
+        page shows that position, the person puts back whatever is not there (checkers taken
+        off the glass go to their tray places) and confirms; then executor.arrange (matched
+        for a small total distance)."""
+        last = list(self.last_board)
+        if self.is_sim:
+            self.sim_board(last)
+            self.new_executor()
+        with self.lock:
+            self.board = last
+        self.ex.set_from_board(last)
+        self.look()
+        self.say("Is every checker where the page shows it?", "setup", ["go", "cancel"],
+                 info="Checkers that were taken off go to their tray places. Then the robot arranges the opening")
+        a = self.wait("go", "cancel")
+        if a["name"] == "go":
+            self.say("The robot is arranging the opening position…", "setup", info="")
+            n = self.ex.arrange(rules.OPENING)
+            self.log_fn(f"arranged from the last game with {n} drags, {self.ex.dragged_mm:.0f} mm")
+            self.last_board = None
+        with self.lock:
+            self.board = list(rules.OPENING)
+            self.info = ""
         self.ex.set_from_board(rules.OPENING)
         self.look()
 
@@ -766,6 +799,8 @@ class Game:
                     continue
                 self.busy = True
                 with self.lock:
+                    if self.turn:   # a game was played: remember where it stopped
+                        self.last_board = list(self.board)
                     self.reset_state()
                 self.play()
             except Restart:
