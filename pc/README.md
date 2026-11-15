@@ -9,6 +9,7 @@ Talks to `firmware/board` over USB serial (no Wi-Fi). Needs `pip install pyseria
 | run this | for |
 |---|---|
 | `dice_test.py` | tries the camera on real dice: roll on the glass, it reads, you say what they show; photos and a score in dice_test/ | |
+| `make_video.py` | a film (mp4, 1080 x 1080) of the newest game as the page showed it, at the speed it was played, to put next to the real video; game.py records `events.jsonl` for it by itself | SPEED, MAX_WAIT, SIZE at the top of the file |
 | `game.py` | a whole game, in the browser |
 | `console.py` | type commands to the board (H, G x y, M 1, C, ?) |
 | `calibrate.py` | camera calibration (`test` mode: click -> the magnet goes there) |
@@ -58,6 +59,7 @@ Also from a phone on the same WiFi (the address is printed).
 | file | what | options inside |
 |---|---|---|
 | `dice_test.py` | tries the camera on real dice: roll on the glass, it reads, you say what they show; photos and a score in dice_test/ | |
+| `make_video.py` | a film (mp4, 1080 x 1080) of the newest game as the page showed it, at the speed it was played, to put next to the real video; game.py records `events.jsonl` for it by itself | SPEED, MAX_WAIT, SIZE at the top of the file |
 | `game.py` | turns, dice, reading the human's move, end of game, log in `games/<date-time>/` | mode: robot vs human / robot vs robot (demo) / watch (two people, the robot checks); human move: "I'm done" button / pick it on the page and the robot moves it. The game never looks for checkers in the photo: it starts from the opening and reads a person's move from what changed between two photos |
 | `webui.py` | the page + terminal fallback (n, d, 52, ...) | |
 | `rules.py` | legal moves, simple engine, find the move between two boards | engine: gnubg / simple / random |
