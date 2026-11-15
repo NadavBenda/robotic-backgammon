@@ -202,6 +202,9 @@ def view(img, c, px_per_mm=PX_PER_MM, xmax=410.0, ymax=420.0, board=True):
 BOARD_ALPHA = 0.15     # Nadav 13.11: 0.35 hid the photo too much
 
 
+NUM_MM = 16.0   # height of the column numbers on the top view, in board mm
+
+
 def draw_board(top, f, L, alpha=BOARD_ALPHA):
     """The game page's board drawing over a top view: a triangle per column (the person's
     numbers), the bar row and the bear-off tray places, blended at alpha."""
@@ -217,8 +220,6 @@ def draw_board(top, f, L, alpha=BOARD_ALPHA):
         tip = lane0 - 4 if left else lane1 + 4
         tri = np.array([px(base, y - r + 1), px(base, y + r - 1), px(tip, y)], np.int32)
         cv2.fillPoly(over, [tri], (124, 167, 201) if (25 - p) % 2 else (67, 106, 143), cv2.LINE_AA)
-        u, v = px(tip + 9 if left else tip - 9, y)   # the number in the free middle lane
-        cv2.putText(over, str(25 - p), (u - 9, v + 6), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2, cv2.LINE_AA)
     by = L._row_y(6)
     a, b = px(-2, by - r), px(L.xmax + 2, by + r)
     cv2.rectangle(over, (min(a[0], b[0]), min(a[1], b[1])), (max(a[0], b[0]), max(a[1], b[1])), (184, 198, 207), -1)
@@ -231,7 +232,13 @@ def draw_board(top, f, L, alpha=BOARD_ALPHA):
         x, y = L._nominal(p, 0)
         left = x < L.xmax / 2
         u, v = px((lane0 - 4) + 9 if left else (lane1 + 4) - 9, y)
-        cv2.putText(out, str(25 - p), (u - 9, v + 6), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (235, 235, 235), 1, cv2.LINE_AA)
+        t = str(25 - p)   # big, black with a white outline: read on a white wall and on a dark one
+        sc = NUM_MM * f.k / 22.0   # the font is 22 px tall at scale 1
+        th_ = max(2, int(round(sc * 2.2)))
+        (tw, th), _ = cv2.getTextSize(t, cv2.FONT_HERSHEY_SIMPLEX, sc, th_)
+        at = (u - tw // 2, v + th // 2)
+        cv2.putText(out, t, at, cv2.FONT_HERSHEY_SIMPLEX, sc, (255, 255, 255), th_ + max(3, int(round(sc * 5))), cv2.LINE_AA)
+        cv2.putText(out, t, at, cv2.FONT_HERSHEY_SIMPLEX, sc, (0, 0, 0), th_, cv2.LINE_AA)
     return out
 
 
