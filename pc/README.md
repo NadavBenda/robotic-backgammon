@@ -1,6 +1,6 @@
 # PC side
 
-Talks to `firmware/board` over USB serial (no Wi-Fi). Needs `pip install pyserial opencv-python numpy` (and `torch` for the pixel network of train_detector.py, optional).
+Talks to `firmware/board` over USB serial (no Wi-Fi). Needs `pip install pyserial opencv-python numpy`.
 
 **Folder:** the top level holds only the scripts you run (double-click) and their data
 (`calib.json`, `layout.json`, `vision_model.json`, `captures/`, `games/`). All internal code is in
@@ -15,8 +15,6 @@ Talks to `firmware/board` over USB serial (no Wi-Fi). Needs `pip install pyseria
 | `place_opening.py` | set up the opening position with the cart showing where |
 | `place_trays.py` | put all 30 checkers in the bear-off trays, the cart showing where |
 | `arrange_opening.py` | the robot sets up the opening from the trays by itself |
-| `collect.py` | labelled photos for checker detection: the robot moves checkers (columns, bar, bear-off trays; mostly where the dataset is thin) and photographs each position (saved in dataset/, not uploaded) |
-| `train_detector.py` | teaches the learned checker detector from those photos, compares it with norm, saves detector.json (used only when vision = learned) |
 | `move.py` | move single checkers by clicking, with planned paths |
 | `swap.py` | demo: swap two checkers |
 | `drag_test.py` | find the fastest drag speed that holds |
@@ -49,13 +47,16 @@ with Board() as b:          # finds the ESP32 port by itself, or Board("COM5")
 
 ## Playing a whole game (12.11)
 
+Double-click `Start game.bat` (or `py game.py`). At every start on the real board the data files (`data/*.json`: calibration, layout) are copied to `backup/<date-time>/` when they changed since the last copy.
+
+
 `py game.py` (double-click) opens a page in the browser: the board, the dice, the buttons and the
 settings. Real board if it is connected, otherwise a simulator (to try everything without hardware).
 Also from a phone on the same WiFi (the address is printed).
 
 | file | what | options inside |
 |---|---|---|
-| `game.py` | turns, dice, reading the human's move, end of game, log in `games/<date-time>/` | mode: robot vs human / robot vs robot (demo) / watch (two people, the robot checks); human move: Done button / automatic (waits until the board shows a legal move) / pick it on the page and the robot moves it |
+| `game.py` | turns, dice, reading the human's move, end of game, log in `games/<date-time>/` | mode: robot vs human / robot vs robot (demo) / watch (two people, the robot checks); human move: "I'm done" button / pick it on the page and the robot moves it. The game never looks for checkers in the photo: it starts from the opening and reads a person's move from what changed between two photos |
 | `webui.py` | the page + terminal fallback (n, d, 52, ...) | |
 | `rules.py` | legal moves, simple engine, find the move between two boards | engine: gnubg / simple / random |
 | `layout.py` | where each checker goes, in mm (points, bar, bear-off trays, dice zone, park spot) | defaults from plan v4 fitted to 410x420; `teach_layout.py` fits it to the real board in 4 clicks |

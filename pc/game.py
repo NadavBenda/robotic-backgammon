@@ -272,6 +272,8 @@ class Game:
                 self.b.home_if_needed()
                 self.is_sim = False
                 self.log_fn("Connected to the real board.")
+                import files
+                files.backup(self.log_fn)
             except Exception as e:
                 if want == "real":
                     raise
