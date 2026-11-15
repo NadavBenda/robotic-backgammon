@@ -64,6 +64,7 @@ CHANGE_MARGIN = 1.0   # ... and the next legal move is at least this much worse 
 TRAYS = ("off_robot", "off_human")   # not judged: a person may take checkers off the glass altogether
 ROBOT_FIT_WARN = 6.0  # the photo after a robot move fits it worse than this: a quiet note at the bottom
 NO_MOVE_S = 2.5       # how long "no legal move" stays on the page when the robot cannot play
+RECORD = True         # keep events.jsonl in the game's folder (for make_video.py); False = off
 ALL_OUT = [0] * 26    # every checker in the bear-off trays (as place_trays.py leaves them)
 
 DEFAULTS = {
@@ -130,6 +131,7 @@ class Game:
         self.last_img = None               # the last photo (of the board as it is known), for reading by change
         self.winner = None
         self.logfile = None
+        self.tape, self.tape_key = [], None   # the game as the page showed it, for make_video.py (events.jsonl)
         self.shots = []                    # photos taken before the first move (the folder is made then)
         self.shot_n = 0                    # running number of the game's photos
 
@@ -160,6 +162,39 @@ class Game:
                     "bar_y": round(self.L._row_y(6), 1), "frame": self.frame(),
                     "paths": [[[round(x, 1), round(y, 1)] for x, y in p] for p in self.paths],
                     "players": self.players(), "robot_white": self.robot_white}
+
+    def tape_tick(self):
+        """One line in the game's events.jsonl whenever what the page shows changed: the time,
+        every checker (magnet mm), the dice, the texts, the robot's drag path. make_video.py
+        turns it into a film that runs at the speed the game was played (Nadav 15.11)."""
+        lf = self.logfile
+        if lf is None:
+            return
+        st = {"pieces": [[round(x, 1), round(y, 1), s] for (x, y), s in self.where()]}
+        with self.lock:
+            st.update(turn=self.turn, dice=self.dice, prompt=self.prompt, info=self.info, phase=self.phase,
+                      winner=self.winner, robot_white=self.robot_white, players=self.players(),
+                      pips=rules.pips(self.board), off=list(rules.off_count(self.board)),
+                      path=[[round(x, 1), round(y, 1)] for x, y in self.paths[-1]] if self.paths else None)
+        key = json.dumps(st, sort_keys=True)
+        if key == self.tape_key:
+            return
+        self.tape_key = key
+        st["t"] = round(time.time(), 2)
+        self.tape.append(json.dumps(st))
+        if lf.parent.exists():
+            lines, self.tape = self.tape, []
+            with open(lf.parent / "events.jsonl", "a", encoding="utf-8") as f:
+                f.write("\n".join(lines) + "\n")
+
+    def tape_loop(self):
+        while True:
+            time.sleep(0.1)
+            try:
+                self.tape_tick()
+            except Exception as e:     # the film must never stop the game
+                self.log_fn(f"tape: {e}")
+                time.sleep(2)
 
     def frame(self):
         """Picture frame mm -> magnet mm (= the corrected photo's axes) as a 2x3 matrix, for the page."""
@@ -830,6 +865,8 @@ class Game:
 
     def run_forever(self):
         """Game thread: wait for New game, play, repeat."""
+        if RECORD:
+            threading.Thread(target=self.tape_loop, daemon=True).start()
         while True:
             try:
                 self.busy = False

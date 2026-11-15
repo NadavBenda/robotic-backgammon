@@ -92,6 +92,8 @@ button.small{font-size:12px;padding:4px 10px;opacity:.7}
 .photo2{width:100%;border-radius:8px;display:none;margin-top:8px}
 .grid{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center}
 .low{display:grid;gap:10px}
+.tog{padding:4px 8px;font-size:15px;line-height:1}
+body.clean .low,body.clean #newbtn,body.clean #log,body.clean .camnote,body.clean #sim{display:none}
 details.card{padding:10px 14px}summary{cursor:pointer}
 .warn{color:var(--warn);font-size:13px}
 #edask{position:fixed;z-index:9;background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:8px;box-shadow:0 4px 14px #0008;display:flex;flex-direction:column;gap:6px;font-size:13px}
@@ -106,6 +108,8 @@ details.card{padding:10px 14px}summary{cursor:pointer}
 <header class="top">
  <div class="logo">AI<b>·</b>bg<span id="sim"></span></div>
  <button class="sec small" id="newbtn" hidden>New game</button>
+ <button class="sec small tog" id="sndbtn" title="Sounds: dice, your turn, the end of the game"></button>
+ <button class="sec small tog" id="cleanbtn" title="Video mode: only the game, nothing else on the page"></button>
  <div class="players" title="Who plays which colour">
   <div class="player" id="pl-robot"><span class="face" id="fc-robot"></span><div><div class="nm" id="nm-robot">Robot</div><div class="st" id="st-robot"></div></div></div>
   <button class="swapbtn" id="swapbtn" title="Swap the colours" aria-label="Swap the colours">⇄</button>
@@ -126,7 +130,7 @@ details.card{padding:10px 14px}summary{cursor:pointer}
   <div id="info"></div><div id="log"></div></div>
  <div class="card"><h2>The camera</h2>
   <div class="pic"><img id="photo" alt="top view" style="display:none"></div>
-  <div class="mute" style="margin-top:10px">The board from below, the same way round as the drawing. Circles: where the game knows the checkers are.</div></div>
+  <div class="mute camnote" style="margin-top:10px">The board from below, the same way round as the drawing. Circles: where the game knows the checkers are.</div></div>
 </section>
 <section class="low">
   <details class="card"><summary class="mute">Original camera photo</summary>
@@ -234,7 +238,12 @@ function face(v,red){return `<svg viewBox="0 0 40 40" width="100%" height="100%"
  (PIPS[v]||[]).map(([i,j])=>`<circle cx="${i*10}" cy="${j*10}" r="3.7" fill="${red?'#fff':'#1b1b1b'}"/>`).join("")+`</svg>`}
 let lastDice, rollEnd=0, AC=null;
 function rolling(){return Date.now()<rollEnd}
-function audio(){try{AC=AC||new (window.AudioContext||window.webkitAudioContext)();if(AC.state==="suspended")AC.resume();return AC}catch(e){return null}}
+// two switches kept in this browser: sounds on / off, video mode (only the game on the page)
+let SOUND=true, CLEAN=false;
+try{SOUND=localStorage.getItem("sound")!=="0";CLEAN=localStorage.getItem("clean")==="1"}catch(e){}
+function paintToggles(){document.getElementById("sndbtn").textContent=SOUND?"🔊":"🔇";
+ document.getElementById("cleanbtn").textContent=CLEAN?"🎬 on":"🎬";document.body.classList.toggle("clean",CLEAN)}
+function audio(){if(!SOUND)return null;try{AC=AC||new (window.AudioContext||window.webkitAudioContext)();if(AC.state==="suspended")AC.resume();return AC}catch(e){return null}}
 function rattle(){const A=audio();if(!A)return;try{const t0=A.currentTime;
  for(let k=0;k<7;k++){const t=t0+k*0.07+Math.random()*0.03,n=A.createBufferSource(),b=A.createBuffer(1,A.sampleRate*0.03,A.sampleRate),
   d=b.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,3);
@@ -247,6 +256,9 @@ function tone(A,type,f0,f1,t,dur,vol){const o=A.createOscillator(),g=A.createGai
 function fanfare(){const A=audio();if(!A)return;const t=A.currentTime+0.05;   // a rising arpeggio and a held chord
  [523.25,659.25,783.99,1046.5].forEach((f,i)=>{tone(A,"triangle",f,f,t+i*0.13,0.22,0.3);tone(A,"square",f,f,t+i*0.13,0.18,0.05)});
  [523.25,659.25,783.99,1046.5,1318.5].forEach(f=>tone(A,"triangle",f,f,t+0.56,1.1,0.16))}
+function yourTurn(){// a soft double chime (and a buzz on a phone): look up from the board, it is your move
+ try{if(SOUND&&navigator.vibrate)navigator.vibrate([90,60,90])}catch(e){}
+ const A=audio();if(!A)return;const t=A.currentTime+0.02;tone(A,"sine",880,880,t,0.18,0.22);tone(A,"sine",1318.5,1318.5,t+0.16,0.32,0.2)}
 function sadTune(){const A=audio();if(!A)return;const t=A.currentTime+0.05;   // the falling "wah wah wah waaah"
  [[392,370,0,0.32],[370,349,0.36,0.32],[349,330,0.72,0.32],[330,247,1.08,1.0]].forEach(([a,b,d,len])=>{
   tone(A,"sawtooth",a,b,t+d,len,0.13);tone(A,"triangle",a/2,b/2,t+d,len,0.16)})}
@@ -285,7 +297,7 @@ function paintPlayers(s){for(const side of ["robot","human"]){const p=s.players[
   document.getElementById("pl-"+side).classList.toggle("on",!s.winner&&s.turn===side||!!s.winner&&s.winner.who===side)}}
 document.getElementById("swapbtn").onclick=()=>{if(!S)return;S.robot_white=!S.robot_white;post({name:"swap_colours"});
  paintPlayers(S);if(ED)drawEdit(S);else drawBoard(S)};
-let newArmed=0, lastWin=null;
+let newArmed=0, lastWin=null, lastMine=false;
 function newGame(b){if(S&&S.turn&&!S.winner&&Date.now()>newArmed){newArmed=Date.now()+3000;b.textContent="Stop this game? Click again";
   setTimeout(()=>{b.textContent="New game"},3000);return}
  newArmed=0;post({name:"new"})}
@@ -302,6 +314,8 @@ function render(s){S=s;if(!built){buildSettings(s.settings);built=true}
  const wk=s.winner?JSON.stringify(s.winner)+s.history.length:null;
  if(wk&&wk!==lastWin&&lastWin!==undefined){if(s.winner.lost)sadTune();else{fanfare();confetti()}}
  lastWin=wk;
+ const mine=s.phase==="human_move"&&s.asks.includes("done")&&!s.sim;   // a person's move starts: chime
+ if(mine&&!lastMine&&s.history.length)yourTurn();lastMine=mine;
  document.getElementById("ptext").textContent=s.prompt;
  const dk=JSON.stringify(s.dice||null);if(dk!==lastDice){if(lastDice!==undefined&&s.dice)roll();lastDice=dk}
  drawDice(s);
@@ -336,6 +350,9 @@ function render(s){S=s;if(!built){buildSettings(s.settings);built=true}
   const tp=document.getElementById("top");tp.src="/photo.jpg?t="+s.photo_t;tp.style.display="block"}}
 async function tick(){try{render(await (await fetch("/state")).json())}catch(e){}setTimeout(tick,300)}
 document.getElementById("board").addEventListener("click",edPlace);
+document.getElementById("sndbtn").onclick=()=>{SOUND=!SOUND;try{localStorage.setItem("sound",SOUND?"1":"0")}catch(e){}paintToggles();if(SOUND)yourTurn()};
+document.getElementById("cleanbtn").onclick=()=>{CLEAN=!CLEAN;try{localStorage.setItem("clean",CLEAN?"1":"0")}catch(e){}paintToggles()};
+paintToggles();
 document.getElementById("newbtn").onclick=ev=>newGame(ev.currentTarget);
 document.addEventListener("keydown",ev=>{// Enter = I'm done, when it is offered and nothing is being typed
  if(ev.key!=="Enter"||!S||!S.asks.includes("done")||S.busy||PEND)return;
