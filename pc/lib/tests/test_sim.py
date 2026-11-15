@@ -34,6 +34,19 @@ def test_dice_from_photo():
         assert dice.from_photo(photo(b, L), b.calib, L) == d
 
 
+def test_dice_read_by_change():
+    """Real dice anywhere on the glass, white or dark, found by what changed between two photos."""
+    L = Layout()
+    ck = [xy for xy, _ in L.place(rules.OPENING).values()]
+    for look in ({}, {"dark": True}, {"zone": (160, 150, 250, 190)}, {"size": 22.0, "zone": (20, -10, 120, 40), "dark": True}):
+        for d in [(1, 6), (5, 2), (3, 3), (6, 4), (6, 6), (2, 1)]:
+            b = SimBoard.with_board(rules.OPENING, L, noise_mm=0.5, seed=3)
+            before = photo(b, L)
+            b.dice, b.dice_look = d, look
+            assert dice.read(before, photo(b, L), b.calib, L, checkers=ck) == d, (look, d)
+    assert dice.read(before, before, b.calib, L, checkers=ck) is None      # no dice: no reading
+
+
 def test_vision_reads_sloppy_human_move():
     L = Layout()
     b = SimBoard.with_board(rules.OPENING, L, noise_mm=1.0, seed=5)

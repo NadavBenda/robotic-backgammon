@@ -178,7 +178,7 @@ class SimBoard:
                 cv2.fillPoly(img, [np.int32(np.stack([u, v], -1))], col, cv2.LINE_AA)
         if self.dice:
             from dice import draw_dice
-            draw_dice(img, c, self.dice, self.layout)
+            draw_dice(img, c, self.dice, self.layout, **getattr(self, "dice_look", {}))
         # the magnet cart is under the glass: a dark blob where it is
         u, v = c.mm_to_px(*self.pos)
         cv2.circle(img, (int(u), int(v)), 12, (30, 30, 30), -1)
