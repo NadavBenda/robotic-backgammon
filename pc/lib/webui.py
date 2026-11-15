@@ -42,15 +42,17 @@ h2{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute
 .logo{font-size:22px;font-weight:800;letter-spacing:.04em}.logo b{color:var(--gold)}
 #sim{font-size:11px;color:var(--mute);border:1px solid var(--line);border-radius:10px;padding:1px 8px;margin-left:8px;vertical-align:middle}
 #sim:empty{display:none}
-.players{margin-left:auto;display:flex;align-items:center;gap:10px}
-.player{display:flex;align-items:center;gap:10px;padding:6px 14px 6px 6px;border-radius:40px;border:1.5px solid var(--line);
- background:var(--card);transition:border-color .3s,box-shadow .3s}
-.player.on{border-color:var(--gold);box-shadow:0 0 0 3px #e2b05333,0 0 22px #e2b05344}
-.player .face{width:46px;height:46px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#d9b57c,#8f6c3d);display:grid;place-items:center;flex:none}
-.player .face svg{width:32px;height:32px}
-.player .nm{font-weight:700;line-height:1.1}.player .st{font-size:12px;color:var(--mute);white-space:nowrap}
-.swapbtn{width:34px;height:34px;border-radius:50%;padding:0;font-size:17px;line-height:1;background:transparent;color:var(--mute);border:1px solid var(--line)}
-.swapbtn:hover{color:var(--gold);border-color:var(--gold)}
+.vs{flex:1 1 560px;min-width:0;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px}
+/* a player: icon, name and colour all in the colour of that side's checkers, on wood so black and white both read */
+.player{display:flex;align-items:center;gap:10px;padding:6px 18px 6px 6px;border-radius:40px;border:2px solid #5d4526;
+ background:linear-gradient(135deg,#d9b57c,#9a7646);transition:border-color .3s,box-shadow .3s}
+.player.right{flex-direction:row-reverse;padding:6px 6px 6px 18px;text-align:right}
+.player.on{border-color:var(--gold);box-shadow:0 0 0 3px #e2b05355,0 0 24px #e2b05366}
+.player .face{width:54px;height:54px;border-radius:50%;background:#0000001c;display:grid;place-items:center;flex:none}
+.player .face svg{width:40px;height:40px}
+.player .nm{font-weight:800;font-size:20px;line-height:1.1}.player .st{font-size:15px;font-weight:700;white-space:nowrap}
+.side{display:flex;flex-direction:column;align-items:flex-end;gap:6px}.side>div{display:flex;gap:6px}
+.swapbtn{padding:4px 9px;font-size:15px;line-height:1}
 /* -- the stage: what to do now, the buttons, the dice pinned at the right -- */
 .stage{display:grid;grid-template-columns:minmax(0,1fr) 96px;gap:16px;align-items:center;min-height:196px;position:relative;overflow:hidden}
 .stage::before{content:"";position:absolute;left:0;top:0;height:3px;width:40%;background:linear-gradient(90deg,transparent,var(--gold),transparent);
@@ -81,16 +83,17 @@ button.small{font-size:12px;padding:4px 10px;opacity:.7}
  50%{transform:rotate(180deg) translateY(0)}75%{transform:rotate(270deg) translateY(-4px)}100%{transform:rotate(360deg)}}
 /* -- the board and the camera -- */
 .pair{display:grid;gap:14px;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start}
-@media (max-width:860px){.pair{grid-template-columns:1fr}#prompt{font-size:22px}.players{margin-left:0}
+@media (max-width:860px){.pair{grid-template-columns:1fr}#prompt{font-size:22px}.vs{grid-template-columns:1fr 1fr;flex-basis:100%;order:3}.vs .edgebar{grid-column:1/3;grid-row:2}.vs .player{justify-self:start}.vs .player.right{justify-self:end}
+ .player .face{width:42px;height:42px}.player .face svg{width:30px;height:30px}.player .nm{font-size:16px}.player .st{font-size:13px}.side{margin-left:auto}
  .stage{grid-template-columns:minmax(0,1fr) 68px;min-height:150px}.die{width:60px;height:60px}button.big{padding:12px 30px;font-size:20px}}
 .pic{position:relative;width:100%;aspect-ratio:450/460;border-radius:12px;overflow:hidden;background:#0b0a09}
 .pic svg,.pic img{position:absolute;inset:0;width:100%;height:100%;display:block;object-fit:fill;margin:0}
-#edge{display:flex;align-items:center;gap:12px;margin:0 0 12px;font-size:17px;font-weight:800;white-space:nowrap}
-#edge[hidden]{display:none}
-.edgebar{flex:1;height:34px;border-radius:17px;overflow:hidden;border:1.5px solid #6b6256;position:relative}
-.edgebar span{position:absolute;top:0;bottom:0;display:flex;align-items:center;font-size:15px;font-weight:800;color:#fff;mix-blend-mode:difference;z-index:1}
-#edge-pl{left:14px}#edge-pr{right:14px}
-@media (max-width:860px){#edge{font-size:14px;gap:8px}.edgebar{height:30px}.edgebar span{font-size:13px}#edge-pl{left:10px}#edge-pr{right:10px}}
+.edgebar{height:56px;border-radius:28px;overflow:hidden;border:2px solid #6b6256;position:relative}
+.edgebar.off{visibility:hidden}
+.edgebar span{position:absolute;top:0;bottom:0;display:flex;flex-direction:column;justify-content:center;line-height:1.1;font-size:15px;font-weight:700;color:#fff;mix-blend-mode:difference;z-index:1}
+.edgebar span b{font-size:22px;font-weight:800}
+#edge-pl{left:20px}#edge-pr{right:20px;text-align:right}
+@media (max-width:860px){.edgebar{height:46px}.edgebar span{font-size:13px}.edgebar span b{font-size:18px}}
 .edgebar i{position:absolute;left:0;top:0;bottom:0;transition:width .8s ease}
 .edgebar::after{content:"";position:absolute;left:50%;top:0;bottom:0;width:3px;z-index:2;margin-left:-1px;background:var(--gold);opacity:.9}
 #info{margin-top:10px;font-weight:600;color:var(--gold);min-height:21px}
@@ -115,16 +118,18 @@ details.card{padding:10px 14px}summary{cursor:pointer}
 </style></head><body><main>
 <header class="top">
  <div class="logo">AI<b>·</b>bg<span id="sim"></span></div>
- <button class="sec small" id="newbtn" hidden>New game</button>
- <button class="sec small tog" id="sndbtn" title="Sounds: dice, your turn, the end of the game"></button>
- <button class="sec small tog" id="cleanbtn" title="Video mode: only the game, nothing else on the page"></button>
- <div class="players" title="Who plays which colour">
+ <div class="vs" title="Who plays which colour, and who is ahead">
   <div class="player" id="pl-robot"><span class="face" id="fc-robot"></span><div><div class="nm" id="nm-robot">Robot</div><div class="st" id="st-robot"></div></div></div>
-  <button class="swapbtn" id="swapbtn" title="Swap the colours" aria-label="Swap the colours">⇄</button>
-  <div class="player" id="pl-human"><span class="face" id="fc-human"></span><div><div class="nm" id="nm-human">You</div><div class="st" id="st-human"></div></div></div>
+  <div class="edgebar off" id="edge"><i id="edge-f"></i><span id="edge-pl"></span><span id="edge-pr"></span></div>
+  <div class="player right" id="pl-human"><span class="face" id="fc-human"></span><div><div class="nm" id="nm-human">You</div><div class="st" id="st-human"></div></div></div>
+ </div>
+ <div class="side">
+  <button class="sec small" id="newbtn" hidden>New game</button>
+  <div><button class="sec small tog" id="swapbtn" title="Swap the colours" aria-label="Swap the colours">⇄</button>
+  <button class="sec small tog" id="sndbtn" title="Sounds: dice, your turn, the end of the game"></button>
+  <button class="sec small tog" id="cleanbtn" title="Video mode: only the game, nothing else on the page"></button></div>
  </div>
 </header>
-<div id="edge" title="Who is ahead" hidden><span id="edge-l"></span><div class="edgebar"><i id="edge-f"></i><span id="edge-pl"></span><span id="edge-pr"></span></div><span id="edge-r"></span></div>
 <section class="card stage" id="stage">
  <div>
   <div id="prompt"><span id="ptext">…</span><span class="spin"></span></div>
@@ -165,8 +170,8 @@ function P(x,y){const A=S.frame,b=A[1][0]*x+A[1][1]*y+A[1][2];return [A[0][0]*x+
 function Q(x,y){const [a,b]=P(x,y);return `${a.toFixed(1)},${b.toFixed(1)}`}
 function toFrame(mx,my){if(FLIP)my=420-my;const A=S.frame,d=A[0][0]*A[1][1]-A[0][1]*A[1][0],u=mx-A[0][2],v=my-A[1][2];
  return [(A[1][1]*u-A[0][1]*v)/d,(-A[1][0]*u+A[0][0]*v)/d]}
-function txt(x,y,t,size,fill,bold){const [a,b]=P(x,y);
- return `<text x="${a}" y="${b+size*0.35}" font-size="${size}" ${bold?'font-weight="bold"':''} text-anchor="middle" fill="${fill}">${t}</text>`}
+function txt(x,y,t,size,fill,bold,rim){const [a,b]=P(x,y);
+ return `<text x="${a}" y="${b+size*0.35}" font-size="${size}" ${bold?'font-weight="bold"':''} text-anchor="middle" fill="${fill}" ${rim?`stroke="${rim}" stroke-width="3" paint-order="stroke" stroke-linejoin="round"`:''}>${t}</text>`}
 // the checkers are black and white, as on the real board (Nadav 15.11)
 function isWhite(side){return (side==="robot")===!!(S&&S.robot_white)}
 function ink(side){return isWhite(side)?"#1a1a1a":"#f4f4f4"}
@@ -186,7 +191,7 @@ function base(s,edit){let h=DEFS+`<rect x="-20" y="-20" width="450" height="460"
  for(const [x,y,n] of s.labels){const left=x<205;
   const pts=left?`${Q(x-13,y+13)} ${Q(x-13,y-13)} ${Q(x+150,y)}`:`${Q(x+13,y+13)} ${Q(x+13,y-13)} ${Q(x-150,y)}`;
   h+=`<polygon points="${pts}" fill="${n%2?'#e3c28f':'#a8452e'}" opacity=".9"/>`;
-  h+=txt(left?x+164:x-164,y,n,18,"#eef6f2",true)}
+  h+=txt(left?x+164:x-164,y,n,15,"#000",true,"#fff")}
  return h}
 function pathsSvg(s){let h="";const ps=s.paths||[];
  ps.forEach((p,i)=>{if(p.length<2)return;const last=i===ps.length-1;
@@ -299,7 +304,7 @@ function icon(kind,white){const f=white?"#f6f4ec":"#141414";// one colour only: 
   :`<svg viewBox="0 0 32 32" fill="${f}"><circle cx="16" cy="10" r="6.500"/><path d="M4 29c0-7.500 5.200-11 12-11s12 3.500 12 11z"/></svg>`}
 function paintPlayers(s){for(const side of ["robot","human"]){const p=s.players[side],i=side==="robot"?0:1;
   const fc=document.getElementById("fc-"+side),k=p.kind+isWhite(side);if(fc.dataset.k!==k){fc.dataset.k=k;fc.innerHTML=icon(p.kind,isWhite(side))}
-  document.getElementById("nm-"+side).textContent=p.name;
+  document.getElementById("nm-"+side).textContent=p.name;document.getElementById("pl-"+side).style.color=isWhite(side)?"#fbfaf4":"#0c0c0c";
   document.getElementById("st-"+side).textContent=(isWhite(side)?"white":"black")+(s.off[i]?" · "+s.off[i]+" off":"");
   document.getElementById("pl-"+side).classList.toggle("on",!s.winner&&s.turn===side||!!s.winner&&s.winner.who===side)}}
 document.getElementById("swapbtn").onclick=()=>{if(!S)return;S.robot_white=!S.robot_white;post({name:"swap_colours"});
@@ -348,13 +353,12 @@ function render(s){S=s;if(!built){buildSettings(s.settings);built=true}
   if(s.phase==="idle")a.append(el("button",{class:"big",text:"New game",onclick:()=>post({name:"new"})}))}
  document.getElementById("newbtn").hidden=s.phase==="idle"||s.asks.includes("new");
  paintPlayers(s);
- const eg=document.getElementById("edge");eg.hidden=!s.edge;
- if(s.edge){const pr=Math.round(s.edge.robot*100),bar=eg.querySelector(".edgebar"),f=document.getElementById("edge-f");
+ const eg=document.getElementById("edge");eg.classList.toggle("off",!s.edge);
+ if(s.edge){const pr=Math.round(s.edge.robot*100),f=document.getElementById("edge-f");
   // the robot's share from the left in the robot's checker colour, the rest in the other colour
-  f.style.width=pr+"%";f.style.background=hex("robot");bar.style.background=hex("human");
-  document.getElementById("edge-l").textContent=s.players.robot.name+" "+pr+"%";
-  document.getElementById("edge-r").textContent=(100-pr)+"% "+s.players.human.name;
-  document.getElementById("edge-pl").textContent=s.pips[0]+" to go";document.getElementById("edge-pr").textContent=s.pips[1]+" to go";
+  f.style.width=pr+"%";f.style.background=hex("robot");eg.style.background=hex("human");
+  document.getElementById("edge-pl").innerHTML="<b>"+pr+"%</b>"+s.pips[0]+" to go";
+  document.getElementById("edge-pr").innerHTML="<b>"+(100-pr)+"%</b>"+s.pips[1]+" to go";
   eg.title="Chance to win, by "+s.edge.by+(s.edge.by==="pip count"?" (the race only: hits and blocks are not counted)":"")}
  document.getElementById("coach").textContent=s.coach||"";
  document.getElementById("info").textContent=s.info||"";
