@@ -224,6 +224,8 @@ def test(args):
 
 
 if __name__ == "__main__":
+    import files
+    files.backup()   # a copy of the calibration from before this run
     ap = argparse.ArgumentParser()
     ap.add_argument("mode", nargs="?", default="run", choices=["run", "test"])
     ap.add_argument("--port")

@@ -347,36 +347,7 @@ def find_norm(img, c, L, model, depth=7):
     return found, sorted(set(map(str, hidden)))
 
 
-_detector = {}
-
-
 def read(img, c, L, model, method="scan"):
-    if method == "both":      # learned + cnn averaged (lib/ensemble.py)
-        import cnn
-        import ensemble
-        import learned
-        if "d" not in _detector:
-            read(img, c, L, model, "learned")   # loads detector.json (or says it is missing)
-        if "cnn" not in _detector:
-            read(img, c, L, model, "cnn")
-        x, e = cnn.inputs(img, c, L)
-        return summarize(ensemble.find(_detector["d"], _detector["cnn"], learned.features(img, c, L), x, e, L), L)
-    if method == "cnn":       # detector_cnn.pt from train_detector.py (needs PyTorch)
-        import cnn
-        if "cnn" not in _detector:
-            try:
-                _detector["cnn"] = cnn.Detector.load()
-            except (OSError, ImportError):
-                raise ValueError("no pixel network yet: install PyTorch, run collect.py, then train_detector.py") from None
-        return summarize(_detector["cnn"].find(img, c, L), L)
-    if method == "learned":   # detector.json from train_detector.py
-        import learned
-        if "d" not in _detector:
-            try:
-                _detector["d"] = learned.Detector.load()
-            except OSError:
-                raise ValueError("no detector.json yet: run collect.py, then train_detector.py") from None
-        return summarize(_detector["d"].find(img, c, L)[0], L)
     if method == "norm":
         ck, hidden = find_norm(img, c, L, model)
         r = summarize(ck, L)

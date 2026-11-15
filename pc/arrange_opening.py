@@ -6,10 +6,7 @@
   1. Put the checkers in the trays (place_trays.py shows you where).
   2. Enter = start    q = stop
   3. The robot drags them one by one (around the others): the columns farthest from the
-     trays first, and in each column the checker at the edge first, then parks and takes a photo.
-     With detector.json (train_detector.py) it reads the photo and says what, if
-     anything, is not where it should be: push that one by hand, or press Arrange on the
-     game page.
+     trays first, and in each column the checker at the edge first, then parks.
 """
 import sys  # noqa: E402
 from pathlib import Path as _P
@@ -61,34 +58,10 @@ def arrange(b, L, frm, to, log=print, ex=None):
     return ex, n
 
 
-def check(b, c, L, want, log=print):
-    """Photo + the trained detector: [text] where it differs from `want` ([] = all fine,
-    None = no detector.json)."""
-    import learned
-    import vision
-    from helpers import photo
-    try:
-        det = learned.Detector.load()
-    except (OSError, ValueError, KeyError):
-        return None
-    img = photo(b)[0]
-    got = learned.full(vision.summarize(det.find(img, c, L)[0], L))
-    off = rules.off_count(want)
-    exp = list(want) + [off[0], off[1]]
-    out = []
-    for i, (g, e) in enumerate(zip(got, exp)):
-        if g != e:
-            name = "bar" if i in (0, 25) else ("robot's tray" if i == 26 else "your tray") if i >= 26 else f"column {25 - i}"
-            out.append(f"{name}: should be {abs(e)}, the camera sees {abs(g)}")
-    return out
-
-
 def main():
-    import calib
     from board import Board
     from layout import Layout
     L = Layout.load()
-    c = calib.load()
     print(__doc__.split("\n\n")[1])
     if input("All 30 checkers in the trays?\n   Enter = start\n   q = stop\n> ").strip().lower() == "q":
         return
@@ -98,16 +71,7 @@ def main():
         print("Arranging (30 drags, a few minutes)...")
         _, n = arrange(b, L, frm, to)
         print(f"   {n} drags done")
-        bad = check(b, c, L, to)
-    if bad is None:
-        print("Done. (No detector.json, so no photo check: look at the board.)")
-    elif not bad:
-        print("Done. The camera sees every checker in its place.")
-    else:
-        print("Done, but the camera sees something else at:")
-        for t in bad:
-            print("   " + t)
-        print("Push those by hand, or start game.py and press Arrange.")
+    print("Done. Look at the board: every checker should stand in its place.")
 
 
 if __name__ == "__main__":
