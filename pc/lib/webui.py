@@ -46,7 +46,7 @@ h2{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute
 .player{display:flex;align-items:center;gap:10px;padding:6px 14px 6px 6px;border-radius:40px;border:1.5px solid var(--line);
  background:var(--card);transition:border-color .3s,box-shadow .3s}
 .player.on{border-color:var(--gold);box-shadow:0 0 0 3px #e2b05333,0 0 22px #e2b05344}
-.player .face{width:46px;height:46px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#3f7a66,#17382e);display:grid;place-items:center;flex:none}
+.player .face{width:46px;height:46px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#d9b57c,#8f6c3d);display:grid;place-items:center;flex:none}
 .player .face svg{width:32px;height:32px}
 .player .nm{font-weight:700;line-height:1.1}.player .st{font-size:12px;color:var(--mute);white-space:nowrap}
 .swapbtn{width:34px;height:34px;border-radius:50%;padding:0;font-size:17px;line-height:1;background:transparent;color:var(--mute);border:1px solid var(--line)}
@@ -85,11 +85,14 @@ button.small{font-size:12px;padding:4px 10px;opacity:.7}
  .stage{grid-template-columns:minmax(0,1fr) 68px;min-height:150px}.die{width:60px;height:60px}button.big{padding:12px 30px;font-size:20px}}
 .pic{position:relative;width:100%;aspect-ratio:450/460;border-radius:12px;overflow:hidden;background:#0b0a09}
 .pic svg,.pic img{position:absolute;inset:0;width:100%;height:100%;display:block;object-fit:fill;margin:0}
-#edge{display:flex;align-items:center;gap:10px;margin:0 0 10px;font-size:12.5px;font-weight:700;white-space:nowrap}
+#edge{display:flex;align-items:center;gap:12px;margin:0 0 12px;font-size:17px;font-weight:800;white-space:nowrap}
 #edge[hidden]{display:none}
-.edgebar{flex:1;height:14px;border-radius:8px;overflow:hidden;border:1px solid #6b6256;position:relative}
+.edgebar{flex:1;height:34px;border-radius:17px;overflow:hidden;border:1.5px solid #6b6256;position:relative}
+.edgebar span{position:absolute;top:0;bottom:0;display:flex;align-items:center;font-size:15px;font-weight:800;color:#fff;mix-blend-mode:difference;z-index:1}
+#edge-pl{left:14px}#edge-pr{right:14px}
+@media (max-width:860px){#edge{font-size:14px;gap:8px}.edgebar{height:30px}.edgebar span{font-size:13px}#edge-pl{left:10px}#edge-pr{right:10px}}
 .edgebar i{position:absolute;left:0;top:0;bottom:0;transition:width .8s ease}
-.edgebar::after{content:"";position:absolute;left:50%;top:0;bottom:0;width:2px;margin-left:-1px;background:var(--gold);opacity:.9}
+.edgebar::after{content:"";position:absolute;left:50%;top:0;bottom:0;width:3px;z-index:2;margin-left:-1px;background:var(--gold);opacity:.9}
 #info{margin-top:10px;font-weight:600;color:var(--gold);min-height:21px}
 #log{margin-top:4px;font-size:12.5px;color:var(--mute);display:grid;gap:1px}
 #log div:first-child{color:var(--ink)}
@@ -121,6 +124,7 @@ details.card{padding:10px 14px}summary{cursor:pointer}
   <div class="player" id="pl-human"><span class="face" id="fc-human"></span><div><div class="nm" id="nm-human">You</div><div class="st" id="st-human"></div></div></div>
  </div>
 </header>
+<div id="edge" title="Who is ahead" hidden><span id="edge-l"></span><div class="edgebar"><i id="edge-f"></i><span id="edge-pl"></span><span id="edge-pr"></span></div><span id="edge-r"></span></div>
 <section class="card stage" id="stage">
  <div>
   <div id="prompt"><span id="ptext">…</span><span class="spin"></span></div>
@@ -131,7 +135,6 @@ details.card{padding:10px 14px}summary{cursor:pointer}
 </section>
 <section class="pair">
  <div class="card"><h2>The game</h2>
-  <div id="edge" title="Who is ahead" hidden><span id="edge-l"></span><div class="edgebar"><i id="edge-f"></i></div><span id="edge-r"></span></div>
   <div class="pic"><svg id="board" viewBox="-20 -20 450 460" preserveAspectRatio="none"></svg></div>
   <div id="info"></div><div id="log"></div></div>
  <div class="card"><h2>The camera</h2>
@@ -183,7 +186,7 @@ function base(s,edit){let h=DEFS+`<rect x="-20" y="-20" width="450" height="460"
  for(const [x,y,n] of s.labels){const left=x<205;
   const pts=left?`${Q(x-13,y+13)} ${Q(x-13,y-13)} ${Q(x+150,y)}`:`${Q(x+13,y+13)} ${Q(x+13,y-13)} ${Q(x-150,y)}`;
   h+=`<polygon points="${pts}" fill="${n%2?'#e3c28f':'#a8452e'}" opacity=".9"/>`;
-  h+=txt(left?x+162:x-162,y,n,11,"#cfe3da")}
+  h+=txt(left?x+164:x-164,y,n,18,"#eef6f2",true)}
  return h}
 function pathsSvg(s){let h="";const ps=s.paths||[];
  ps.forEach((p,i)=>{if(p.length<2)return;const last=i===ps.length-1;
@@ -290,16 +293,14 @@ function buildSettings(s){const g=document.getElementById("settings");g.innerHTM
    if(String(s[k])===String(o))op.selected=true;sel.append(op)}
   g.append(el("label",{text:NAMES[k]}),sel)}}
 // -- who plays what: a computer and a person, drawn in the colour of their checkers --
-function icon(kind,white){const f=white?"#f6f4ec":"#141414",o=white?"#141414":"#f6f4ec";
- const st=`fill="${f}" stroke="${o}" stroke-width="1.3" stroke-linejoin="round"`;
+function icon(kind,white){const f=white?"#f6f4ec":"#141414";// one colour only: the colour of that side's checkers
  return kind==="computer"
-  ?`<svg viewBox="0 0 32 32"><rect x="3" y="5" width="26" height="17" rx="2.5" ${st}/><rect x="6.5" y="8.5" width="19" height="10" rx="1" fill="${o}" opacity=".85"/>`+
-   `<circle cx="12.5" cy="13.5" r="1.7" fill="${f}"/><circle cx="19.5" cy="13.5" r="1.7" fill="${f}"/><path d="M13 22h6l1.2 4H11.8z" ${st}/><rect x="8" y="26" width="16" height="2.6" rx="1.3" ${st}/></svg>`
-  :`<svg viewBox="0 0 32 32"><circle cx="16" cy="10" r="6" ${st}/><path d="M4.5 28.5c0-7 5-10.5 11.5-10.5s11.5 3.500 11.500 10.500z" ${st}/></svg>`}
+  ?`<svg viewBox="0 0 32 32" fill="${f}"><path fill-rule="evenodd" d="M5.5 4h21A2.5 2.5 0 0 1 29 6.5v13a2.500 2.500 0 0 1-2.500 2.500h-21A2.500 2.500 0 0 1 3 19.500v-13A2.500 2.500 0 0 1 5.500 4zM10 11.200a2.200 2.200 0 1 0 4.400 0a2.200 2.200 0 1 0-4.400 0zM17.600 11.200a2.200 2.200 0 1 0 4.400 0a2.200 2.200 0 1 0-4.400 0zM11 16h10v1.800H11z"/><path d="M13 22h6l1.200 3.500H11.800z"/><rect x="8" y="25.500" width="16" height="3" rx="1.500"/></svg>`
+  :`<svg viewBox="0 0 32 32" fill="${f}"><circle cx="16" cy="10" r="6.500"/><path d="M4 29c0-7.500 5.200-11 12-11s12 3.500 12 11z"/></svg>`}
 function paintPlayers(s){for(const side of ["robot","human"]){const p=s.players[side],i=side==="robot"?0:1;
   const fc=document.getElementById("fc-"+side),k=p.kind+isWhite(side);if(fc.dataset.k!==k){fc.dataset.k=k;fc.innerHTML=icon(p.kind,isWhite(side))}
   document.getElementById("nm-"+side).textContent=p.name;
-  document.getElementById("st-"+side).textContent=(isWhite(side)?"white":"black")+" · "+s.pips[i]+" to go"+(s.off[i]?" · "+s.off[i]+" off":"");
+  document.getElementById("st-"+side).textContent=(isWhite(side)?"white":"black")+(s.off[i]?" · "+s.off[i]+" off":"");
   document.getElementById("pl-"+side).classList.toggle("on",!s.winner&&s.turn===side||!!s.winner&&s.winner.who===side)}}
 document.getElementById("swapbtn").onclick=()=>{if(!S)return;S.robot_white=!S.robot_white;post({name:"swap_colours"});
  paintPlayers(S);if(ED)drawEdit(S);else drawBoard(S)};
@@ -353,6 +354,7 @@ function render(s){S=s;if(!built){buildSettings(s.settings);built=true}
   f.style.width=pr+"%";f.style.background=hex("robot");bar.style.background=hex("human");
   document.getElementById("edge-l").textContent=s.players.robot.name+" "+pr+"%";
   document.getElementById("edge-r").textContent=(100-pr)+"% "+s.players.human.name;
+  document.getElementById("edge-pl").textContent=s.pips[0]+" to go";document.getElementById("edge-pr").textContent=s.pips[1]+" to go";
   eg.title="Chance to win, by "+s.edge.by+(s.edge.by==="pip count"?" (the race only: hits and blocks are not counted)":"")}
  document.getElementById("coach").textContent=s.coach||"";
  document.getElementById("info").textContent=s.info||"";
