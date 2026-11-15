@@ -16,7 +16,7 @@ Talks to `firmware/board` over USB serial (no Wi-Fi). Needs `pip install pyseria
 | `teach_layout.py` | fit the board map to the real board in 4 clicks |
 | `place_opening.py` | set up the opening position with the cart showing where |
 | `place_trays.py` | put all 30 checkers in the bear-off trays, the cart showing where |
-| `mark_columns.py` | mark the columns on the glass: the robot carries one checker to the first place of every column (and to the bear-off line) and waits while you draw beside it |
+| `mark_columns.py` | mark the columns on the glass: from all 30 in the trays the robot puts one checker on every column, black and white taking turns, waits while you draw, then puts them back |
 | `arrange_opening.py` | the robot sets up the opening from the trays by itself |
 | `move.py` | move single checkers by clicking, with planned paths |
 | `swap.py` | demo: swap two checkers |
