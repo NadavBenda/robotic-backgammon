@@ -85,6 +85,11 @@ button.small{font-size:12px;padding:4px 10px;opacity:.7}
  .stage{grid-template-columns:minmax(0,1fr) 68px;min-height:150px}.die{width:60px;height:60px}button.big{padding:12px 30px;font-size:20px}}
 .pic{position:relative;width:100%;aspect-ratio:450/460;border-radius:12px;overflow:hidden;background:#0b0a09}
 .pic svg,.pic img{position:absolute;inset:0;width:100%;height:100%;display:block;object-fit:fill;margin:0}
+#edge{display:flex;align-items:center;gap:10px;margin:0 0 10px;font-size:12.5px;font-weight:700;white-space:nowrap}
+#edge[hidden]{display:none}
+.edgebar{flex:1;height:14px;border-radius:8px;overflow:hidden;border:1px solid #6b6256;position:relative}
+.edgebar i{position:absolute;left:0;top:0;bottom:0;transition:width .8s ease}
+.edgebar::after{content:"";position:absolute;left:50%;top:0;bottom:0;width:2px;margin-left:-1px;background:var(--gold);opacity:.9}
 #info{margin-top:10px;font-weight:600;color:var(--gold);min-height:21px}
 #log{margin-top:4px;font-size:12.5px;color:var(--mute);display:grid;gap:1px}
 #log div:first-child{color:var(--ink)}
@@ -126,6 +131,7 @@ details.card{padding:10px 14px}summary{cursor:pointer}
 </section>
 <section class="pair">
  <div class="card"><h2>The game</h2>
+  <div id="edge" title="Who is ahead" hidden><span id="edge-l"></span><div class="edgebar"><i id="edge-f"></i></div><span id="edge-r"></span></div>
   <div class="pic"><svg id="board" viewBox="-20 -20 450 460" preserveAspectRatio="none"></svg></div>
   <div id="info"></div><div id="log"></div></div>
  <div class="card"><h2>The camera</h2>
@@ -145,7 +151,7 @@ const OPTS={mode:["robot_vs_human","robot_vs_robot","watch"],engine:["gnubg","si
  coach:[false,true],first:["human","robot","roll"],board:["auto","real","sim"]};
 const NAMES={mode:"Mode",engine:"Engine",dice:"Dice",human_move:"Your move",coach:"Coach",first:"Who starts",board:"Board"};
 const BTN={new:"New game",done:"I'm done",accept:"Accept",reread:"Read again",start:"Start",
- arrange:"Robot arranges from the trays",rearrange:"Robot arranges from the last game",go:"Yes, go",cancel:"Cancel",rolled:"Rolled"};
+ arrange:"Robot arranges from the trays",rearrange:"Robot arranges from the last game",go:"Yes, go",cancel:"Cancel",undo:"Undo last move",replay:"I put them back, play again",rolled:"Rolled"};
 let S=null, built=false, lastPhoto=0, ED=null, PEND=null;
 // -- the board is drawn as the corrected camera photo shows it: frame mm (x, y from the near side)
 // -> magnet mm (x right, y down) through the layout's own map (s.frame), 1 unit = 1 mm --
@@ -333,11 +339,21 @@ function render(s){S=s;if(!built){buildSettings(s.settings);built=true}
      el("button",{class:"sec",text:"Undo my changes",onclick:()=>{ED=S.seen.slice();drawEdit(S)}}))}
    else if(k==="move_pick"){const sel=el("select");for(const m of s.legal)sel.append(el("option",{text:m}));
     a.append(sel,el("button",{class:s.asks.includes("likely")?"sec":"",text:s.asks.includes("likely")?"It was this one":"Play this",onclick:()=>post({name:"move",value:sel.value})}))}
+   else if(k==="undo"){const ub=el("button",{class:"sec",text:BTN.undo});   // the robot moves: ask twice
+    ub.onclick=()=>{if(ub.dataset.armed){post({name:"undo"})}else{ub.dataset.armed="1";ub.textContent="Undo your move and the robot's? Click again";
+     setTimeout(()=>{delete ub.dataset.armed;ub.textContent=BTN.undo},3000)}};a.append(ub)}
    else if(k==="new")a.append(el("button",{class:"big",text:"New game",onclick:()=>post({name:"new"})}));
-   else a.append(el("button",{class:(k==="done"||k==="start"||k==="rolled")?"big":(k==="reread"||k==="arrange"||k==="rearrange"||k==="cancel")?"sec":"",text:BTN[k]||k,onclick:()=>post({name:k})}))}
+   else a.append(el("button",{class:(k==="done"||k==="start"||k==="rolled")?"big":(k==="reread"||k==="arrange"||k==="rearrange"||k==="cancel"||k==="replay")?"sec":"",text:BTN[k]||k,onclick:()=>post({name:k})}))}
   if(s.phase==="idle")a.append(el("button",{class:"big",text:"New game",onclick:()=>post({name:"new"})}))}
  document.getElementById("newbtn").hidden=s.phase==="idle"||s.asks.includes("new");
  paintPlayers(s);
+ const eg=document.getElementById("edge");eg.hidden=!s.edge;
+ if(s.edge){const pr=Math.round(s.edge.robot*100),bar=eg.querySelector(".edgebar"),f=document.getElementById("edge-f");
+  // the robot's share from the left in the robot's checker colour, the rest in the other colour
+  f.style.width=pr+"%";f.style.background=hex("robot");bar.style.background=hex("human");
+  document.getElementById("edge-l").textContent=s.players.robot.name+" "+pr+"%";
+  document.getElementById("edge-r").textContent=(100-pr)+"% "+s.players.human.name;
+  eg.title="Chance to win, by "+s.edge.by+(s.edge.by==="pip count"?" (the race only: hits and blocks are not counted)":"")}
  document.getElementById("coach").textContent=s.coach||"";
  document.getElementById("info").textContent=s.info||"";
  const lg=document.getElementById("log");lg.innerHTML="";
