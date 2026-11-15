@@ -111,6 +111,16 @@ def hints(board, dice, plies=PLIES):
     return parse_hints(out), out
 
 
+def best_with_equity(board, dice, plies=PLIES):
+    """(steps of the best move, its equity for the side on roll); ([], None) when there is no legal move."""
+    found, out = hints(board, dice, plies)
+    if not found:
+        if re.search(r"no legal moves|cannot move|no moves", out, re.I):
+            return [], None
+        raise GnubgError("gnubg gave no hint. Output:\n" + out[-1500:])
+    return parse_move(found[0][2]), found[0][3]
+
+
 def best_move(board, dice, plies=PLIES):
     """The best move as a list of Step. [] when there is no legal move (e.g. stuck on the bar)."""
     found, out = hints(board, dice, plies)

@@ -131,6 +131,8 @@ class Game:
         self.last_img = None               # the last photo (of the board as it is known), for reading by change
         self.winner = None
         self.logfile = None
+        self.steps_log = []                # the steps of every recorded move (same order as history), for Undo
+        self.edge_gnubg = None             # the robot's chance to win by gnubg's last look (0..1)
         self.tape, self.tape_key = [], None   # the game as the page showed it, for make_video.py (events.jsonl)
         self.shots = []                    # photos taken before the first move (the folder is made then)
         self.shot_n = 0                    # running number of the game's photos
@@ -161,7 +163,24 @@ class Game:
                     "pieces": self.pieces(), "labels": self.labels(), "seen": self.board,
                     "bar_y": round(self.L._row_y(6), 1), "frame": self.frame(),
                     "paths": [[[round(x, 1), round(y, 1)] for x, y in p] for p in self.paths],
-                    "players": self.players(), "robot_white": self.robot_white}
+                    "players": self.players(), "robot_white": self.robot_white, "edge": self.edge()}
+
+    def edge(self):
+        """Who is ahead, for the page's bar: {'robot': chance 0..1 that the 'robot' side wins,
+        'by': where it comes from}. gnubg's own number when it chose the last move (its equity
+        for the side on roll, (eq + 1) / 2); otherwise only the race: Kleinman's formula on the
+        pip counts, which ignores hits and blocks."""
+        if self.turn is None:
+            return None
+        if self.edge_gnubg is not None:
+            return {"robot": round(self.edge_gnubg, 3), "by": "gnubg"}
+        own, opp = rules.pips(self.board)
+        if not own or not opp:
+            return {"robot": 1.0 if not own else 0.0, "by": "pip count"}
+        me, other = (own, opp) if self.turn == "robot" else (opp, own)      # me: the side on roll
+        import math
+        p = 0.5 * (1 + math.erf((other - me + 4) / (2 * math.sqrt(max(1.0, me + other - 4)))))
+        return {"robot": round(p if self.turn == "robot" else 1 - p, 3), "by": "pip count"}
 
     def tape_tick(self):
         """One line in the game's events.jsonl whenever what the page shows changed: the time,
@@ -420,13 +439,18 @@ class Game:
         self.mark()
 
     # -- engine -------------------------------------------------------------------
-    def choose(self, board, dice_):
-        """Best steps for the side on roll of `board` (that side's view)."""
+    def choose(self, board, dice_, side=None):
+        """Best steps for the side on roll of `board` (that side's view). side: whose view it
+        is; with gnubg its equity then also feeds the page's who-is-ahead bar."""
         eng = self.s["engine"]
         if eng == "gnubg":
             try:
                 import gnubg
-                return gnubg.best_move(board, dice_), "gnubg"
+                steps, eq = gnubg.best_with_equity(board, dice_)
+                if eq is not None and side:
+                    p = min(0.99, max(0.01, (eq + 1) / 2))
+                    self.edge_gnubg = p if side == "robot" else 1 - p
+                return steps, "gnubg"
             except Exception as e:
                 self.warn(f"gnubg failed ({str(e)[:80]}), using the simple engine")
                 eng = "simple"
@@ -521,6 +545,7 @@ class Game:
                 "t": datetime.now().isoformat(timespec="seconds")}
         with self.lock:
             self.history.append(item)
+            self.steps_log.append(list(steps) if steps else [])
         if self.logfile:
             self.logfile.parent.mkdir(parents=True, exist_ok=True)
             self.flush_shots()
@@ -533,7 +558,7 @@ class Game:
         who = self.name(side)
         before = list(self.board)
         view = self.board if side == "robot" else rules.flip(self.board)
-        steps, eng = self.choose(view, d)
+        steps, eng = self.choose(view, d, side)
         if not steps:
             # nothing to play: leave it on the page for a moment before the turn passes (Nadav 15.11)
             self.say(f"{who}: no legal move", "robot_move", info=f"{who} rolled {d[0]}-{d[1]}: no legal move")
@@ -584,8 +609,48 @@ class Game:
         return (len(b) == 26 and sum(v for v in b if v > 0) <= 15 and -sum(v for v in b if v < 0) <= 15
                 and b[0] >= 0 and b[25] <= 0)
 
-    def human_turn(self, side="human", d=None):
-        """d: the dice, when the person corrected them on the page in the middle of the turn."""
+    def can_undo(self, side):
+        """Undo is for a person against the robot: the person's last move and the robot's answer."""
+        h = self.history
+        return (side == "human" and self.s["mode"] == "robot_vs_human" and self.s["human_move"] != "robot_moves"
+                and len(h) >= 2 and h[-1]["who"] == "robot" and h[-2]["who"] == "human")
+
+    def undo(self):
+        """Take back the person's last move and the robot's answer to it (Nadav 15.11): the
+        robot drags its own checkers back (a checker it hit returns from the bar), the known
+        board goes back to before the person's move, and that turn is played again with the
+        same dice. Returns those dice."""
+        rob, hum = self.history[-1], self.history[-2]
+        steps = self.steps_log[-1]
+        self.say("The robot takes its move back…", "robot_move", info=f"Undo of moves {hum['n']} and {rob['n']}")
+        for st in reversed(steps):
+            to_key, frm_key = self.ex._key(st.to, "robot"), self.ex._key(st.frm, "robot")
+            self.ex.move_checker(to_key, frm_key, "robot")
+            if st.hit and self.ex.places.get("bar_human"):
+                self.ex.move_checker("bar_human", to_key, "human")
+        with self.lock:
+            del self.history[-2:]
+            del self.steps_log[-2:]
+            self.board = list(hum["board_before"])
+            self.dice = list(hum["dice"])
+            self.edge_gnubg = None
+        if self.logfile and self.logfile.parent.exists():
+            with open(self.logfile, "a", encoding="utf-8") as f:
+                f.write(json.dumps({"undo": [hum["n"], rob["n"]], "t": datetime.now().isoformat(timespec="seconds")}) + "\n")
+        self.ex.set_from_board(self.board)      # the page shows the board from before the move
+        self.look()
+        return tuple(hum["dice"])
+
+    def sim_sync(self):
+        """Simulator only: put its checkers where the known board says (a hand did it)."""
+        if self.is_sim:
+            self.sim_board(self.board)
+            self.new_executor()
+            self.ex.set_from_board(self.board)
+
+    def human_turn(self, side="human", d=None, redo=False):
+        """d: the dice, when the person corrected them on the page in the middle of the turn.
+        redo: this turn is played again after Undo."""
         real = self.s["dice"] != "digital"       # real dice: they can be corrected until I'm done
         if d is None:
             d = self.roll(side, person=True)
@@ -597,7 +662,7 @@ class Game:
         hv = rules.flip(self.board) if side == "human" else list(self.board)
         plays = rules.legal_moves(hv, d)
         if self.s["coach"]:
-            steps, eng = self.choose(hv, d)
+            steps, eng = self.choose(hv, d, side)
             with self.lock:
                 self.coach = f"{eng} would play {rules.move_text(steps)}"
         self.drain()
@@ -615,7 +680,28 @@ class Game:
             self.legal = texts
         to_robot = (lambda nb: rules.flip(nb)) if side == "human" else (lambda nb: list(nb))
         cands = [to_robot(nb) for _, nb in plays]
+        if redo:
+            # the checkers may already stand as the move really was (it was read wrong): pick it.
+            # Or the person wants another move: checkers back as drawn, then play again.
+            self.say("Undone. Which move did you really make?", "human_move", ["move_pick", "replay"],
+                     info="Or put your checkers back as drawn here, press the button, and play again")
+            while True:
+                a = self.wait("move", "replay")
+                if a["name"] == "replay":
+                    self.sim_sync()
+                    self.say("Taking a photo…", "reading", info="")
+                    self.look()
+                    break
+                hit = [(s, nb) for s, nb in plays if rules.move_text(s) == a.get("value")]
+                if hit:
+                    with self.lock:
+                        self.info = ""
+                    self.finish_human(side, d, hit[0][0], to_robot(hit[0][1]), "picked after undo")
+                    self.sim_sync()
+                    self.look()
+                    return
         before = self.last_img   # photo of the board before this move (after the last one)
+        undo = ["undo"] if self.can_undo(side) else []
 
         if self.s["human_move"] == "robot_moves":
             self.say(f"{yours} turn: pick the move", "human_move", ["move_pick"])
@@ -636,12 +722,16 @@ class Game:
             return
 
         if self.is_sim:   # nobody's hand in the simulator: the page's picker moves "by hand"
-            self.say(f"{yours} turn (simulator): pick the move, then I'm done", "human_move", ["move_pick", "done"])
+            self.say(f"{yours} turn (simulator): pick the move, then I'm done", "human_move", ["move_pick", "done"] + undo)
         else:
             self.say(f"{yours} turn" + (": take the dice off the glass and play" if self.s["dice"] == "camera" else ""),
-                     "human_move", ["done"] + (["dice_input"] if real else []))
+                     "human_move", ["done"] + (["dice_input"] if real else []) + undo)
         while True:
-            a = self.wait("done", "move", "dice")
+            a = self.wait("done", "move", "dice", "undo")
+            if a["name"] == "undo":
+                if undo:
+                    return self.human_turn(side, self.undo(), redo=True)
+                continue
             if a["name"] == "dice":
                 fixed = dice_mod.parse(a.get("value", ""))
                 if fixed and real and not self.is_sim:
