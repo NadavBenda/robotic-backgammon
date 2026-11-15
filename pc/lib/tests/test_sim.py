@@ -225,3 +225,23 @@ if __name__ == "__main__":
         if k.startswith("test_"):
             f()
             print("ok", k)
+
+
+def test_mark_columns_alternate_and_back():
+    """mark_columns.py: one checker per column, colours alternating, from the trays and back."""
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    import arrange_opening
+    import mark_columns
+    from place_opening import ALL_OUT
+    L = Layout.load()
+    b = SimBoard.with_board(ALL_OUT, L, seed=2)
+
+    def placed(board):
+        truth = b.checkers()
+        return all(any(np.hypot(c[0] - xy[0], c[1] - xy[1]) < 6 and c[2] == s for c in truth)
+                   for xy, s in L.place(board).values())
+    ex, n = arrange_opening.arrange(b, L, ALL_OUT, mark_columns.ALTERNATE, log=lambda *a: None)
+    assert n == 24 and b.bumps == 0 and placed(mark_columns.ALTERNATE), (n, b.bumps, ex.warnings)
+    ex, n = arrange_opening.arrange(b, L, mark_columns.ALTERNATE, ALL_OUT, log=lambda *a: None)
+    assert n == 24 and b.bumps == 0 and placed(ALL_OUT), (n, b.bumps, ex.warnings)
