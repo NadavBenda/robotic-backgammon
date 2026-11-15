@@ -205,9 +205,10 @@ BOARD_ALPHA = 0.15     # Nadav 13.11: 0.35 hid the photo too much
 NUM_MM = 13.0   # height of the column numbers on the top view, in board mm
 
 
-def draw_board(top, f, L, alpha=BOARD_ALPHA):
+def draw_board(top, f, L, alpha=BOARD_ALPHA, numbers=True):
     """The game page's board drawing over a top view: a triangle per column (the person's
-    numbers), the bar row and the bear-off tray places, blended at alpha."""
+    numbers), the bar row and the bear-off tray places, blended at alpha. numbers=False: no
+    column numbers (the game writes them itself, after turning the picture)."""
     import cv2
     over = top.copy()
     r = L.checker / 2
@@ -228,18 +229,33 @@ def draw_board(top, f, L, alpha=BOARD_ALPHA):
             u, v = px(*L._nominal(side, i))
             cv2.circle(over, (u, v), int(r * f.k), (200, 200, 200), 1, cv2.LINE_AA)
     out = cv2.addWeighted(over, alpha, top, 1 - alpha, 0)
-    for p in range(1, 25):   # numbers fully visible
+    if numbers:
+        draw_numbers(out, number_spots(f, L), f.k)
+    return out
+
+
+def number_spots(f, L):
+    """[(text, (u, v))]: each column's number (the person's) and its pixel in the free lane."""
+    lane0, lane1 = L.lane_x()
+    out = []
+    for p in range(1, 25):
         x, y = L._nominal(p, 0)
         left = x < L.xmax / 2
-        u, v = px((lane0 - 4) + 9 if left else (lane1 + 4) - 9, y)
-        t = str(25 - p)   # big, black with a white outline: read on a white wall and on a dark one
-        sc = NUM_MM * f.k / 22.0   # the font is 22 px tall at scale 1
-        th_ = max(2, int(round(sc * 2.2)))
+        u, v = f.mm_to_px(*L.to_magnet((lane0 - 4) + 9 if left else (lane1 + 4) - 9, y))
+        out.append((str(25 - p), (int(round(float(u))), int(round(float(v))))))
+    return out
+
+
+def draw_numbers(out, spots, k):
+    """Big, black with a white outline: read on a white wall and on a dark one."""
+    import cv2
+    sc = NUM_MM * k / 22.0   # the font is 22 px tall at scale 1
+    th_ = max(2, int(round(sc * 2.2)))
+    for t, (u, v) in spots:
         (tw, th), _ = cv2.getTextSize(t, cv2.FONT_HERSHEY_SIMPLEX, sc, th_)
         at = (u - tw // 2, v + th // 2)
         cv2.putText(out, t, at, cv2.FONT_HERSHEY_SIMPLEX, sc, (255, 255, 255), th_ + max(3, int(round(sc * 5))), cv2.LINE_AA)
         cv2.putText(out, t, at, cv2.FONT_HERSHEY_SIMPLEX, sc, (0, 0, 0), th_, cv2.LINE_AA)
-    return out
 
 
 def corrected(img, path=PATH):

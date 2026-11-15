@@ -87,6 +87,7 @@ button.small{font-size:12px;padding:4px 10px;opacity:.7}
  .player .face{width:42px;height:42px}.player .face svg{width:30px;height:30px}.player .nm{font-size:16px}.player .st{font-size:13px}.side{margin-left:auto}
  .stage{grid-template-columns:minmax(0,1fr) 68px;min-height:150px}.die{width:60px;height:60px}button.big{padding:12px 30px;font-size:20px}}
 .pic{position:relative;width:100%;aspect-ratio:450/460;border-radius:12px;overflow:hidden;background:#0b0a09}
+body.ccw .pic{aspect-ratio:460/450}
 .pic svg,.pic img{position:absolute;inset:0;width:100%;height:100%;display:block;object-fit:fill;margin:0}
 .edgebar{height:56px;border-radius:28px;overflow:hidden;border:2px solid #6b6256;position:relative}
 .edgebar.off{visibility:hidden}
@@ -125,7 +126,7 @@ details.card{padding:10px 14px}summary{cursor:pointer}
  </div>
  <div class="side">
   <button class="sec small" id="newbtn" hidden>New game</button>
-  <div><button class="sec small tog" id="swapbtn" title="Swap the colours" aria-label="Swap the colours">⇄</button>
+  <div><button class="sec small tog" id="swapbtn" title="Swap who plays which colour (no checker moves). Before Start or after a game" aria-label="Swap who plays which colour">⇄</button>
   <button class="sec small tog" id="sndbtn" title="Sounds: dice, your turn, the end of the game"></button>
   <button class="sec small tog" id="cleanbtn" title="Video mode: only the game, nothing else on the page"></button></div>
  </div>
@@ -170,8 +171,14 @@ function P(x,y){const A=S.frame,b=A[1][0]*x+A[1][1]*y+A[1][2];return [A[0][0]*x+
 function Q(x,y){const [a,b]=P(x,y);return `${a.toFixed(1)},${b.toFixed(1)}`}
 function toFrame(mx,my){if(FLIP)my=420-my;const A=S.frame,d=A[0][0]*A[1][1]-A[0][1]*A[1][0],u=mx-A[0][2],v=my-A[1][2];
  return [(A[1][1]*u-A[0][1]*v)/d,(-A[1][0]*u+A[0][0]*v)/d]}
+// the drawing turned 90 degrees counter-clockwise (Nadav 15.11: the laptop stands beside the box);
+// every text turned back around its own middle so it stands upright
+function ccw(){return !!(S&&S.turn_ccw)}
+function wrap(h){const svg=document.getElementById("board"),vb=ccw()?"-25 -15 460 450":"-20 -20 450 460";
+ if(svg.getAttribute("viewBox")!==vb)svg.setAttribute("viewBox",vb);document.body.classList.toggle("ccw",ccw());
+ return `<g id="rot" ${ccw()?'transform="rotate(-90 205 210)"':''}>${h}</g>`}
 function txt(x,y,t,size,fill,bold,rim){const [a,b]=P(x,y);
- return `<text x="${a}" y="${b+size*0.35}" font-size="${size}" ${bold?'font-weight="bold"':''} text-anchor="middle" fill="${fill}" ${rim?`stroke="${rim}" stroke-width="3" paint-order="stroke" stroke-linejoin="round"`:''}>${t}</text>`}
+ return `<text x="${a}" y="${b+size*0.35}" ${ccw()?`transform="rotate(90 ${a} ${b})"`:''} font-size="${size}" ${bold?'font-weight="bold"':''} text-anchor="middle" fill="${fill}" ${rim?`stroke="${rim}" stroke-width="3" paint-order="stroke" stroke-linejoin="round"`:''}>${t}</text>`}
 // the checkers are black and white, as on the real board (Nadav 15.11)
 function isWhite(side){return (side==="robot")===!!(S&&S.robot_white)}
 function ink(side){return isWhite(side)?"#1a1a1a":"#f4f4f4"}
@@ -211,7 +218,7 @@ function edAsk(ev,p){// a new column (or the bar): which colour to add?
 document.addEventListener("click",e=>{const m=document.getElementById("edask");if(m&&!m.contains(e.target)&&e.target.id!=="board"&&!e.target.closest("#board"))m.remove()});
 function edPlace(ev){if(!ED)return;const old=document.getElementById("edask");if(old)old.remove();
  const svg=document.getElementById("board");const pt=svg.createSVGPoint();
- pt.x=ev.clientX;pt.y=ev.clientY;const q=pt.matrixTransform(svg.getScreenCTM().inverse());
+ pt.x=ev.clientX;pt.y=ev.clientY;const q=pt.matrixTransform(document.getElementById("rot").getScreenCTM().inverse());
  const [fx,y]=toFrame(q.x,q.y),left=fx<205;
  // the bar: a click on a checker takes it off, anywhere else on the bar asks which colour to add
  if(Math.abs(fx-205)<22&&Math.abs(y-S.bar_y)<BARP*5){const st=Math.round((y-S.bar_y)/BARP),k=st>0?2*st:st<0?-2*st-1:0;
@@ -239,11 +246,11 @@ function drawEdit(s){const svg=document.getElementById("board");
  for(let i=0;i<ED[0];i++)h+=disc(205,s.bar_y+barStep(2*i)*BARP,"robot");
  for(let i=0;i<-ED[25];i++)h+=disc(205,s.bar_y+barStep(2*i+1)*BARP,"human");
  const o=offOf(ED);h+=txt(205,35,`off: ${s.players.robot.name} ${o[0]} · ${s.players.human.name} ${o[1]}`,12,"#cfe3da");
- svg.innerHTML=h}
+ svg.innerHTML=wrap(h)}
 function drawBoard(s){const svg=document.getElementById("board");
  let h=base(s,false);
  for(const [x,y,side] of s.pieces)h+=disc(x,y,side);
- svg.innerHTML=h+pathsSvg(s)}
+ svg.innerHTML=wrap(h+pathsSvg(s))}
 // -- dice: always in the same place at the right, one under the other, one of them red --
 const PIPS={1:[[2,2]],2:[[1,1],[3,3]],3:[[1,1],[2,2],[3,3]],4:[[1,1],[3,1],[1,3],[3,3]],
  5:[[1,1],[3,1],[2,2],[1,3],[3,3]],6:[[1,1],[3,1],[1,2],[3,2],[1,3],[3,3]]};
@@ -307,7 +314,7 @@ function paintPlayers(s){for(const side of ["robot","human"]){const p=s.players[
   document.getElementById("nm-"+side).textContent=p.name;document.getElementById("pl-"+side).style.color=isWhite(side)?"#fbfaf4":"#0c0c0c";
   document.getElementById("st-"+side).textContent=(isWhite(side)?"white":"black")+(s.off[i]?" · "+s.off[i]+" off":"");
   document.getElementById("pl-"+side).classList.toggle("on",!s.winner&&s.turn===side||!!s.winner&&s.winner.who===side)}}
-document.getElementById("swapbtn").onclick=()=>{if(!S)return;S.robot_white=!S.robot_white;post({name:"swap_colours"});
+document.getElementById("swapbtn").onclick=()=>{if(!S||!S.can_swap)return;post({name:"swap_colours"});
  paintPlayers(S);if(ED)drawEdit(S);else drawBoard(S)};
 let newArmed=0, lastWin=null, lastMine=false;
 function newGame(b){if(S&&S.turn&&!S.winner&&Date.now()>newArmed){newArmed=Date.now()+3000;b.textContent="Stop this game? Click again";
@@ -328,7 +335,7 @@ function render(s){S=s;if(!built){buildSettings(s.settings);built=true}
  lastWin=wk;
  const mine=s.phase==="human_move"&&s.asks.includes("done")&&!s.sim;   // a person's move starts: chime
  if(mine&&!lastMine&&s.history.length)yourTurn();lastMine=mine;
- document.getElementById("ptext").textContent=s.prompt;
+ document.getElementById("ptext").textContent=s.prompt+(s.cooling?` (magnet cooling, ${s.cooling} s)`:"");
  const dk=JSON.stringify(s.dice||null);if(dk!==lastDice){if(lastDice!==undefined&&s.dice)roll();lastDice=dk}
  drawDice(s);
  const a=document.getElementById("asks");const keep=document.activeElement&&a.contains(document.activeElement)&&document.activeElement.tagName!=="BUTTON";
@@ -352,7 +359,7 @@ function render(s){S=s;if(!built){buildSettings(s.settings);built=true}
    else a.append(el("button",{class:(k==="done"||k==="start"||k==="rolled")?"big":(k==="reread"||k==="arrange"||k==="rearrange"||k==="cancel"||k==="replay")?"sec":"",text:BTN[k]||k,onclick:()=>post({name:k})}))}
   if(s.phase==="idle")a.append(el("button",{class:"big",text:"New game",onclick:()=>post({name:"new"})}))}
  document.getElementById("newbtn").hidden=s.phase==="idle"||s.asks.includes("new");
- paintPlayers(s);
+ paintPlayers(s);document.getElementById("swapbtn").disabled=!s.can_swap;
  const eg=document.getElementById("edge");eg.classList.toggle("off",!s.edge);
  if(s.edge){const pr=Math.round(s.edge.robot*100),f=document.getElementById("edge-f");
   // the robot's share from the left in the robot's checker colour, the rest in the other colour

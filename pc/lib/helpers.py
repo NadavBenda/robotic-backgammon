@@ -114,26 +114,44 @@ def step_aside(x, y, args):
     return ax, ay
 
 
+HEAT_MAX = 85   # % of the board's heat budget: a drag that would end above it waits to cool first (Nadav 15.11)
+on_cooling = None   # set by the game: called with the seconds left while the magnet cools (for the page)
+
+
 def magnet_on(b, need_s=0.0):
-    """Magnet on. First, when what is left of the board's heat budget can't cover need_s
-    seconds (the drag about to happen), wait until it can: otherwise the board cuts the
-    magnet halfway (! MAG_TIMEOUT) and the checker is dropped."""
-    try:
-        st = b.status()
-        heat, budget = st.get("HEAT", 0), st.get("BUDGET", 60)
-        left = (100 - heat) / 100.0 * budget
-        if left < need_s:
-            wait = (need_s - left) * 2.0 + 1     # it cools at half the rate it heats
-            print(f"   magnet warm ({heat}%), cooling {wait:.0f} s before the next drag...")
-            time.sleep(wait)
-    except Exception:
-        pass
-    while True:
+    """Magnet on. First, when the drag about to happen (need_s seconds) would take the
+    magnet past HEAT_MAX % of the board's heat budget, wait until it has cooled enough (the
+    board is asked again every few seconds). Then turn it on and check that it really is."""
+    for _ in range(120):   # 10 minutes at most
+        try:
+            st = b.status()
+            heat, budget = st.get("HEAT", 0), st.get("BUDGET", 60)
+        except Exception:
+            break
+        left = (HEAT_MAX - heat) / 100.0 * budget
+        if left >= need_s:
+            break
+        wait = min(5.0, (need_s - left) * 2.0 + 0.5)   # it cools at half the rate it heats
+        print(f"   magnet warm ({heat}%), cooling before the next drag...")
+        if on_cooling:
+            on_cooling((need_s - left) * 2.0)
+        time.sleep(wait)
+    if on_cooling:
+        on_cooling(0)
+    for tries in range(60):
         try:
             b.magnet(True)
-            return
         except BoardError as e:
             if "MAG_HOT" not in str(e):
                 raise
             print("   magnet hot, waiting 10 s...")
             time.sleep(10)
+            continue
+        try:
+            if b.status().get("MAG", 1) == 1:
+                return
+        except Exception:
+            return
+        print("   the magnet did not turn on, again...")
+        time.sleep(0.5)
+    raise BoardError("the magnet does not turn on")

@@ -82,6 +82,21 @@ class Restart(Exception):
     pass
 
 
+SWAP_PHASES = ("idle", "setup", "over", "error")   # when the page's swap button works
+TURN_CCW = True   # the page's drawing and photo turned 90 degrees counter-clockwise (Nadav 15.11:
+                  # the laptop stands beside the box); False = as before
+
+
+def mirrored(b):
+    """A board (robot's side) written from the other side, for the same checkers on the glass:
+    the robot's point p is the other side's 25 - p, and the bars swap."""
+    out = [0] * 26
+    out[0], out[25] = -b[25], -b[0]
+    for p in range(1, 25):
+        out[p] = -b[25 - p]
+    return out
+
+
 class _Upside:
     """A top view's pixel map (calib.Flat) for the same picture turned upside down."""
 
@@ -107,6 +122,9 @@ class Game:
         self.is_sim = False
         self.ex = None
         self.last_board = None      # where the last game stopped (the robot can arrange the opening from it)
+        self.cooling_s = 0          # the magnet is cooling before the next drag: about this many seconds
+        import helpers
+        helpers.on_cooling = self.cooling
         self.reset_state()
 
     # -- state shown on the page ---------------------------------------------
@@ -161,9 +179,11 @@ class Game:
                     "off": [own_off, opp_off], "pips": rules.pips(self.board), "winner": self.winner,
                     "has_photo": self.photo is not None, "photo_t": getattr(self, "photo_t", 0),
                     "pieces": self.pieces(), "labels": self.labels(), "seen": self.board,
-                    "bar_y": round(self.L._row_y(6), 1), "frame": self.frame(),
+                    "bar_y": round(self.L._row_y(6), 1), "frame": self.frame(), "turn_ccw": TURN_CCW,
                     "paths": [[[round(x, 1), round(y, 1)] for x, y in p] for p in self.paths],
-                    "players": self.players(), "robot_white": self.robot_white, "edge": self.edge()}
+                    "players": self.players(), "robot_white": self.robot_white, "edge": self.edge(),
+                    "can_swap": not self.busy and self.phase in SWAP_PHASES,
+                    "cooling": self.cooling_s}
 
     def edge(self):
         """Who is ahead, for the page's bar: {'robot': chance 0..1 that the 'robot' side wins,
@@ -193,6 +213,7 @@ class Game:
         with self.lock:
             st.update(turn=self.turn, dice=self.dice, prompt=self.prompt, info=self.info, phase=self.phase,
                       winner=self.winner, robot_white=self.robot_white, players=self.players(),
+                      mirror=self.L.mirror,
                       pips=rules.pips(self.board), off=list(rules.off_count(self.board)),
                       path=[[round(x, 1), round(y, 1)] for x, y in self.paths[-1]] if self.paths else None)
         key = json.dumps(st, sort_keys=True)
@@ -272,15 +293,46 @@ class Game:
     def post(self, action):
         """action: {'name': 'new' | 'start' | 'arrange' | 'done' | 'dice' | 'rolled' | 'accept' |
         'reread' | 'move' | 'board' | 'settings' | 'swap_colours' | 'stop', ...}"""
-        if action.get("name") == "swap_colours":   # the page's swap button: whose checkers are white
-            self.robot_white = not self.robot_white
-            self.redraw()
+        if action.get("name") == "swap_colours":   # the page's swap button: who plays which colour
+            self.swap_sides()
             return
         if action.get("name") == "settings":
             with self.lock:
                 self.s.update({k: v for k, v in action.get("values", {}).items() if k in DEFAULTS})
             return
         self.inbox.put(action)
+
+    def swap_sides(self):
+        """The robot takes the other colour's checkers and the person the robot's (Nadav 15.11):
+        no checker moves, only who plays them. Every place turns left <-> right (Layout.mirror)
+        and the known board is written from the robot's new side. Only between games or while
+        the opening waits for Start, never during a move."""
+        with self.lock:
+            if self.busy or self.phase not in SWAP_PHASES:
+                return
+            self.L.mirror = not self.L.mirror
+            self.robot_white = not self.robot_white
+            self.board = mirrored(self.board)
+            if self.last_board:
+                self.last_board = mirrored(self.last_board)
+        self.log_fn(f"swapped: the robot plays {'white' if self.robot_white else 'black'}")
+        if self.is_sim:   # the simulator's checkers know their owner
+            for c in self.b.ck:
+                c[2] = "human" if c[2] == "robot" else "robot"
+        if self.ex is not None:
+            self.ex.set_from_board(self.board)
+        self.mark()
+
+    def cooling(self, s):
+        self.cooling_s = int(round(s))
+
+    def check_new(self):
+        """New game (or stop) was pressed: stop here (between turns: robot vs robot never
+        waits for a click, Nadav 15.11)."""
+        with self.inbox.mutex:
+            hit = any(a.get("name") in ("new", "stop") for a in self.inbox.queue)
+        if hit:
+            raise Restart()
 
     def drain(self):
         """Forget clicks made before the question was asked (a double-click on Done)."""
@@ -384,6 +436,10 @@ class Game:
         import calib
         top = self.top_base.copy()
         f = _Upside(calib.Flat(self.c), top.shape[0])
+        try:
+            top = calib.draw_board(top, f, self.L, numbers=False)
+        except Exception:   # never lose the photo over the drawing
+            pass
         px = lambda xy: tuple(int(round(float(t))) for t in f.mm_to_px(*xy))  # noqa: E731
         r = int(round(self.L.checker / 2 * f.k))
         white, black = (240, 242, 242), (24, 24, 24)
@@ -401,6 +457,13 @@ class Game:
                 cv2.arrowedLine(top, pts[-2], pts[-1], col, 3, cv2.LINE_AA,
                                 tipLength=min(0.5, 18.0 / max(1.0, float(np.hypot(*np.subtract(pts[-1], pts[-2]))))))
                 cv2.circle(top, pts[0], 5, col, -1, cv2.LINE_AA)
+        if TURN_CCW:   # turned like the page's drawing; the numbers written after, so they stand upright
+            w = top.shape[1]
+            top = cv2.rotate(top, cv2.ROTATE_90_COUNTERCLOCKWISE)
+            spots = [(t, (v, w - 1 - u)) for t, (u, v) in calib.number_spots(f, self.L)]
+        else:
+            spots = calib.number_spots(f, self.L)
+        calib.draw_numbers(top, spots, f.k)
         with self.lock:
             self.photo_top = cv2.imencode(".jpg", top, [cv2.IMWRITE_JPEG_QUALITY, 88])[1].tobytes()
             self.photo_t = time.time()
@@ -419,10 +482,6 @@ class Game:
         import calib
         top, f = calib.view(img, self.c, xmax=self.L.xmax, ymax=self.L.ymax, board=False)
         top = cv2.flip(top, 0)
-        try:
-            top = calib.draw_board(top, _Upside(f, top.shape[0]), self.L)
-        except Exception:   # never lose the photo over the drawing
-            pass
         with self.lock:
             self.top_base = top
             self.paths = []
@@ -928,6 +987,7 @@ class Game:
             who = first
         mode = self.s["mode"]
         while True:
+            self.check_new()
             with self.lock:
                 self.turn = who
                 self.coach = None

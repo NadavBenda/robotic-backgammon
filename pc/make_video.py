@@ -203,7 +203,9 @@ def render(folder, log=print):
     if len(ev) < 2:
         log("This game has no moves to show.")
         return None
-    P = Painter(Layout.load())
+    L = Layout.load()
+    L.mirror = bool(ev[-1].get("mirror"))   # the robot played the other side (the page's swap button)
+    P = Painter(L)
     frames = plan(ev)
     tmp = Path(tempfile.mkdtemp()) / "game.mp4"      # OpenCV cannot write a video to a Hebrew path
     vw = cv2.VideoWriter(str(tmp), cv2.VideoWriter_fourcc(*"mp4v"), FPS, (SIZE, SIZE))
