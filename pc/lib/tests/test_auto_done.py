@@ -52,8 +52,8 @@ def test_auto_done_in_simulator():
 
 
 def test_film_demo_in_simulator():
-    """Film demo: the first roll is 3-1, the move 8/5 6/5 is known; it ends when the photos show
-    it played (no I'm done, nothing asked), and the robot answers."""
+    """Film demo: the first roll is 3-1, the move 8/5 6/5 is known; it ends on I'm done (nothing
+    is read or asked), and the robot answers."""
     G.RECORD = False
     G.AUTO_POLL_S = 0.2
     G.GAMES = Path(__file__).resolve().parent / "_games_tmp_film"
@@ -76,7 +76,10 @@ def test_film_demo_in_simulator():
     assert tuple(g.dice) == G.FILM_ROLL and G.FILM_MOVE in g.prompt
     time.sleep(1.0)
     assert not g.history, "nothing was played yet"
-    g.post({"name": "move", "value": G.FILM_MOVE})   # the simulated hand plays it, no I'm done
+    g.post({"name": "move", "value": G.FILM_MOVE})   # the simulated hand plays it
+    time.sleep(1.0)
+    assert not g.history, "the turn ends only on I'm done"
+    g.post({"name": "done"})
     until(lambda: len(g.history) >= 2, t=60)         # ... and the robot answers
     h = g.history[0]
     assert h["who"] == "human" and "film demo" in h["note"], h

@@ -75,8 +75,7 @@ AUTO_POLL_S = 1.0
 AUTO_HITS = 2
 # Film demo (Nadav 16.11, to film takes): the person's first turn is always FILM_ROLL and the move
 # FILM_MOVE, known in advance, so nothing has to be read from a camera that also sees him leaning
-# over the glass. The turn ends when two photos in a row fit that move better than "nothing moved"
-# (the hand is away), or at once on I'm done. The robot then answers; later turns play as usual.
+# over the glass. The turn ends on I'm done (Enter); the robot then answers. Later turns as usual.
 FILM_ROLL = (3, 1)
 FILM_MOVE = "8/5 6/5"
 TRAYS = ("off_robot", "off_human")   # not judged: a person may take checkers off the glass altogether
@@ -916,23 +915,17 @@ class Game:
                 and not any(h["who"] == "human" for h in self.history))
 
     def film_move(self, side, d, before, steps, after):
-        """Film demo: the move is known (FILM_MOVE). Done when two photos in a row fit it better than
-        'nothing moved' (the hand is away from the glass), or at once on I'm done. Nothing is asked."""
-        self.say(f"Your turn: play {FILM_MOVE}", "human_move", ["done"])
-        seen = []
+        """Film demo: the move is known (FILM_MOVE). The turn ends on I'm done (Enter); no photo
+        is taken while the person plays (Nadav 16.11: the page looked busy, he presses it himself)."""
+        self.say(f"Your turn: play {FILM_MOVE}, then I'm done", "human_move", ["done"])
         while True:
-            a = self.wait("done", "move", timeout=AUTO_POLL_S)
-            if a is None:
-                if self.auto_done(before, [after, list(self.board)], seen, want=after, ok=CHANGE_OK):
-                    break
-                continue
+            a = self.wait("done", "move")
             if a["name"] == "move" and self.is_sim:
                 self.sim_hand_move(rules.flip(self.board), d, FILM_MOVE, side)
                 continue
             if a["name"] == "done":
-                seen = []
                 break
-        self.look(self.auto_img if seen else None)
+        self.look()
         self.finish_human(side, d, steps, after, "film demo: the move was known in advance")
 
     def auto_done(self, before, cands, seen, want=None, ok=None):
