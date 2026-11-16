@@ -26,6 +26,7 @@ PORT = 8765
 PAGE = r"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark only">
 <title>AI-bg</title>
 <style>
 :root{--bg:#12100e;--card:#1d1915;--card2:#262019;--ink:#f3ebdd;--mute:#a59882;--line:#3a3128;
