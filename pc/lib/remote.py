@@ -220,17 +220,18 @@ def make_handler(rem):
 PAGE = r"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<meta name="robots" content="noindex"><meta name="theme-color" content="#12100e">
+<meta name="robots" content="noindex"><meta name="color-scheme" content="dark only"><meta name="theme-color" content="#12100e">
 <title>Backgammon with the robot</title>
 <style>
-:root{--bg:#12100e;--card:#1d1915;--ink:#f3ebdd;--mute:#a59882;--line:#3a3128;--gold:#e2b053}
+:root{color-scheme:only dark;--bg:#12100e;--card:#1d1915;--ink:#f3ebdd;--mute:#a59882;--line:#3a3128;--gold:#e2b053}
+svg,img{forced-color-adjust:none}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.35 system-ui,-apple-system,"Segoe UI",sans-serif;min-height:100vh}
 main{max-width:560px;margin:0 auto;padding:12px 12px 28px;display:grid;gap:10px}
 .top{display:flex;justify-content:space-between;align-items:center;gap:8px;font-weight:700}
 .who{display:flex;align-items:center;gap:8px;padding:6px 12px;border-radius:30px;background:linear-gradient(135deg,#d9b57c,#9a7646);font-size:15px}
 .who.on{box-shadow:0 0 0 3px var(--gold),0 0 20px #e2b05388}
-.who i{width:18px;height:18px;border-radius:50%;display:inline-block;border:1px solid #0008}
+.who i{width:20px;height:20px;border-radius:50%;display:inline-block;border:2px solid #777}
 .vs{color:var(--mute);font-size:13px}
 #prompt{font-size:22px;font-weight:800;text-align:center;min-height:30px}
 #sub{text-align:center;color:var(--mute);font-size:14px;min-height:19px}
@@ -242,8 +243,8 @@ button:active{transform:translateY(2px)}
 button.sec{background:transparent;color:var(--ink);border:1px solid var(--line);box-shadow:none;font-weight:600}
 button.big{font-size:24px;padding:14px 54px}
 button[disabled]{opacity:.4}
-.dice{display:flex;gap:12px;justify-content:center;min-height:60px}
-.die{width:56px;height:56px}
+.dice{display:flex;gap:16px;justify-content:center;min-height:76px}
+.die{width:72px;height:72px;filter:drop-shadow(0 4px 6px #000a)}
 .die.rolling{animation:tumble .3s linear infinite}
 @keyframes tumble{to{transform:rotate(360deg)}}
 .log{font-size:13px;color:var(--mute);display:grid;gap:2px}
@@ -277,8 +278,11 @@ function px(p){// x of the middle of point p (1..24)
  const i=p<=12?12-p:p-13;return 10+i*PW+PW/2+(i>=6?BW:0)}
 function up(p){return p>=13}
 function slotY(p,k){const r=13;return up(p)?TOP+r+k*2*r:BOT-r-k*2*r}
-function col(mine){return (mine===!!S.white)?["#f2f2ea","#8d877a"]:["#1c1c1c","#000"]}
-function disc(x,y,mine,extra=""){const [f,s]=col(mine);return `<circle cx="${x}" cy="${y}" r="12.4" fill="${f}" stroke="${s}" stroke-width="1.2" ${extra}/>`}
+// pure white and pure black, each with a rim in the other colour, so they read on any point and any screen
+function col(mine){return (mine===!!S.white)?["#ffffff","#111111"]:["#111111","#e8e8e8"]}
+function disc(x,y,mine,hl=0){const [f,s]=col(mine);// hl: 1 = can move, 2 = picked (a yellow rim)
+ return `<circle cx="${x}" cy="${y}" r="12.4" fill="${f}" stroke="${hl?"#ffd400":s}" stroke-width="${hl===2?4.5:hl?3:2}"/>`+
+ `<circle cx="${x}" cy="${y}" r="7" fill="none" stroke="${s}" stroke-width="1" opacity=".55" pointer-events="none"/>`}
 function shown(){// the board with the steps chosen so far
  const b=S.board.slice();for(const [f,t] of CH){if(f===25)b[0]--;else b[f]--;if(t>0){if(b[t]===-1){b[t]=0;b[25]--}b[t]++}}return b}
 function remaining(){// the plays that still fit the steps chosen so far, and what is left of each
@@ -299,15 +303,15 @@ function draw(){const b=S.board?shown():Array(26).fill(0),mv=S.what==="move";
  h+=`<rect x="${BX}" y="6" width="${BW}" height="${H-12}" fill="#3a2414"/>`;
  h+=`<rect x="${OFFX-12}" y="6" width="38" height="${H-12}" rx="5" fill="#2a1a0e"/>`;
  for(let p=1;p<=24;p++){const x=px(p),u=up(p),y0=u?TOP:BOT,y1=u?TOP+PH:BOT-PH;
-  h+=`<polygon points="${x-PW/2+1},${y0} ${x+PW/2-1},${y0} ${x},${y1}" fill="${p%2?'#e3c28f':'#a8452e'}"/>`;
+  h+=`<polygon points="${x-PW/2+1},${y0} ${x+PW/2-1},${y0} ${x},${y1}" fill="${p%2?'#9c7a4a':'#7a2a1c'}"/>`;
   h+=`<text x="${x}" y="${u?TOP+PH+14:BOT-PH-6}" font-size="10" fill="#cdbf9f" text-anchor="middle">${p}</text>`;
   if(tg.has(p))h+=`<polygon points="${x-PW/2+1},${y0} ${x+PW/2-1},${y0} ${x},${y1}" fill="#ffe14d" opacity=".45"/>`}
  for(let p=1;p<=24;p++){const n=Math.abs(b[p]);if(!n)continue;const mine=b[p]>0,x=px(p);
   for(let k=0;k<Math.min(n,5);k++){const sel=mine&&SEL===p&&k===Math.min(n,5)-1;
-   h+=disc(x,slotY(p,k),mine,sel?'stroke="#ffe14d" stroke-width="4"':(mine&&src.has(p)&&k===Math.min(n,5)-1&&SEL===null?'stroke="#ffe14d" stroke-width="2.5"':''))}
+   h+=disc(x,slotY(p,k),mine,sel?2:(mine&&src.has(p)&&k===Math.min(n,5)-1&&SEL===null?1:0))}
   if(n>5)h+=`<text x="${x}" y="${slotY(p,4)+5}" font-size="14" font-weight="bold" text-anchor="middle" fill="${col(mine)[0]==='#f2f2ea'?'#000':'#fff'}">${n}</text>`}
  // the bar: theirs at the bottom half, the opponent's at the top
- for(let k=0;k<b[0];k++)h+=disc(BX+BW/2,H/2+20+k*26,true,SEL===25?'stroke="#ffe14d" stroke-width="4"':(src.has(25)?'stroke="#ffe14d" stroke-width="2.5"':''));
+ for(let k=0;k<b[0];k++)h+=disc(BX+BW/2,H/2+20+k*26,true,SEL===25?2:(src.has(25)?1:0));
  for(let k=0;k<-b[25];k++)h+=disc(BX+BW/2,H/2-20-k*26,false);
  // borne off: theirs bottom, the opponent's top
  const off=15-b[0]-b.slice(1,25).reduce((a,v)=>a+(v>0?v:0),0),oo=15+b[25]-b.slice(1,25).reduce((a,v)=>a+(v<0?-v:0),0);
@@ -326,8 +330,8 @@ function after(){const c=complete();draw();acts();if(c)$("sub").textContent="You
 // -- dice --
 function face(v){const P={1:[[50,50]],2:[[28,28],[72,72]],3:[[28,28],[50,50],[72,72]],4:[[28,28],[72,28],[28,72],[72,72]],
  5:[[28,28],[72,28],[50,50],[28,72],[72,72]],6:[[28,26],[72,26],[28,50],[72,50],[28,74],[72,74]]}[v]||[];
- return `<svg viewBox="0 0 100 100" class="die${Date.now()<ROLLING?' rolling':''}"><rect x="4" y="4" width="92" height="92" rx="18" fill="#f6f1e6" stroke="#b8ab92" stroke-width="3"/>`+
-  P.map(([x,y])=>`<circle cx="${x}" cy="${y}" r="9" fill="#1a1a1a"/>`).join("")+`</svg>`}
+ return `<svg viewBox="0 0 100 100" class="die${Date.now()<ROLLING?' rolling':''}"><rect x="4" y="4" width="92" height="92" rx="18" fill="#ffffff" stroke="#e2b053" stroke-width="5"/>`+
+  P.map(([x,y])=>`<circle cx="${x}" cy="${y}" r="11" fill="#000000"/>`).join("")+`</svg>`}
 function dice(){const d=S.dice;$("dice").innerHTML=d?d.map(face).join(""):""}
 // -- buttons --
 function el(t,a={}){const e=document.createElement(t);for(const k in a){if(k==="text")e.textContent=a[k];else if(k.startsWith("on"))e[k]=a[k];else e.setAttribute(k,a[k])}return e}
