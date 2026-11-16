@@ -95,7 +95,7 @@ float freeAccelSteps = 1200.0 * STEPS_PER_MM;  // 1200 מ"מ/ש²
 float dragMaxSteps   = 180.0 * STEPS_PER_MM;  // 180 מ"מ/ש' (drag_test 12.11, Vref 0.86: 200 עבר, 250 חורק/נכשל)
 float dragAccelSteps = 600.0 * STEPS_PER_MM;  // 600 מ"מ/ש² (14.11: ב-800 אבנים נשמטו בפינות)
 
-Magnet mag(MAG_PIN, 40000, 105000);  // מקסימום 40 ש' ברצף, תקציב חום 105 ש' (נדב 15.11: מעט יותר מ-90; המחשב לא יוצא לגרירה מעל 85%)
+Magnet mag(MAG_PIN, 40000, 147000);  // מקסימום 40 ש' ברצף, תקציב חום 147 ש' (נדב 16.11: 105 ועוד 40%; המחשב לא יוצא לגרירה מעל 85%)
 
 long currentXSteps = 0;
 long currentYSteps = 0;
