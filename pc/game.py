@@ -73,6 +73,12 @@ CHANGE_MARGIN = 1.0   # ... and the next legal move is at least this much worse 
 AUTO_OK = 2.0
 AUTO_POLL_S = 1.0
 AUTO_HITS = 2
+# Film demo (Nadav 16.11, to film takes): the person's first turn is always FILM_ROLL and the move
+# FILM_MOVE, known in advance, so nothing has to be read from a camera that also sees him leaning
+# over the glass. The turn ends when two photos in a row fit that move better than "nothing moved"
+# (the hand is away), or at once on I'm done. The robot then answers; later turns play as usual.
+FILM_ROLL = (3, 1)
+FILM_MOVE = "8/5 6/5"
 TRAYS = ("off_robot", "off_human")   # not judged: a person may take checkers off the glass altogether
 ROBOT_FIT_WARN = 6.0  # the photo after a robot move fits it worse than this: a quiet note at the bottom
 NO_MOVE_S = 2.5       # how long "no legal move" stays on the page when the robot cannot play
@@ -87,6 +93,7 @@ DEFAULTS = {
     "coach": False,              # watch / human turns: show gnubg's choice
     "first": "human",            # human (always, Nadav 14.11) | robot | roll (opening roll)
     "board": "auto",             # auto (real, else simulator) | real | sim
+    "film": False,               # Film demo: your first roll is FILM_ROLL and you play FILM_MOVE
 }
 
 
@@ -494,10 +501,12 @@ class Game:
             self.photo_top = cv2.imencode(".jpg", top, [cv2.IMWRITE_JPEG_QUALITY, 88])[1].tobytes()
             self.photo_t = time.time()
 
-    def look(self):
+    def look(self, img=None):
         """A photo of the board as it is known: kept in the game's folder, and it becomes the
-        'before' of the next move read by change. Nothing is detected in it."""
-        img = self.photo_img()
+        'before' of the next move read by change. Nothing is detected in it. img: a photo
+        just taken (Your move = auto), used instead of a new one."""
+        if img is None:
+            img = self.photo_img()
         if self.logfile:
             # every photo is kept: its running number + the number of moves played when it was taken
             name = f"{self.shot_n:03d}_move{len(self.history):02d}.jpg"
@@ -549,7 +558,9 @@ class Game:
         or real dice rolled on the glass and read by the camera (Nadav 15.11)."""
         who = self.name(side)
         how = self.s["dice"] if person else "digital"
-        if how == "digital":
+        if self.film_turn(side) and person:
+            d = FILM_ROLL
+        elif how == "digital":
             d = dice_mod.digital()
         elif how == "camera":
             ask = "Roll the dice on the glass, then press Rolled"
@@ -841,6 +852,11 @@ class Game:
         before = self.last_img   # photo of the board before this move (after the last one)
         undo = ["undo"] if self.can_undo(side) else []
 
+        if self.film_turn(side) and tuple(d) == FILM_ROLL:
+            hit = [(s, nb) for s, nb in plays if rules.move_text(s) == FILM_MOVE]
+            if hit:
+                return self.film_move(side, d, before, hit[0][0], to_robot(hit[0][1]))
+
         if self.s["human_move"] == "robot_moves":
             self.say(f"{yours} turn: pick the move", "human_move", ["move_pick"])
             while True:
@@ -874,6 +890,7 @@ class Game:
                 if self.auto_done(before, cands, seen):
                     break
                 continue
+            seen.clear()
             if a["name"] == "undo":
                 if undo:
                     return self.human_turn(side, self.undo(), redo=True)
@@ -889,17 +906,46 @@ class Game:
             if a["name"] == "done":
                 break
         self.say("Reading the move…", "reading")
-        self.look()
+        # auto: read the photos that showed the move finished, not a new one (he may lean in again)
+        self.look(self.auto_img if auto and seen else None)
         self.read_by_change(before, cands, plays, d, side, to_robot)
 
-    def auto_done(self, before, cands, seen):
+    def film_turn(self, side):
+        """Film demo: this is the person's first turn of the game."""
+        return (self.s.get("film") and side == "human" and self.s["mode"] in ("robot_vs_human", "remote")
+                and not any(h["who"] == "human" for h in self.history))
+
+    def film_move(self, side, d, before, steps, after):
+        """Film demo: the move is known (FILM_MOVE). Done when two photos in a row fit it better than
+        'nothing moved' (the hand is away from the glass), or at once on I'm done. Nothing is asked."""
+        self.say(f"Your turn: play {FILM_MOVE}", "human_move", ["done"])
+        seen = []
+        while True:
+            a = self.wait("done", "move", timeout=AUTO_POLL_S)
+            if a is None:
+                if self.auto_done(before, [after, list(self.board)], seen, want=after, ok=CHANGE_OK):
+                    break
+                continue
+            if a["name"] == "move" and self.is_sim:
+                self.sim_hand_move(rules.flip(self.board), d, FILM_MOVE, side)
+                continue
+            if a["name"] == "done":
+                seen = []
+                break
+        self.look(self.auto_img if seen else None)
+        self.finish_human(side, d, steps, after, "film demo: the move was known in advance")
+
+    def auto_done(self, before, cands, seen, want=None, ok=None):
         """One photo while the person plays (Your move = auto): True when the last AUTO_HITS photos
-        all show the same legal move, fitting within AUTO_OK and at least CHANGE_MARGIN ahead."""
+        all show the same legal move, fitting within AUTO_OK and at least CHANGE_MARGIN ahead.
+        want: only that board counts (film demo). The last photo is kept in self.auto_img."""
         img = self.photo_img()
+        self.auto_img = img
         ranked = vision.rank_by_change(before, img, self.c, self.L, self.board, cands, TRAYS)
         c1, best = ranked[0]
         c2 = ranked[1][0] if len(ranked) > 1 else 99.0
-        fits = c1 <= AUTO_OK and c2 - c1 >= CHANGE_MARGIN
+        fits = (c1 <= (AUTO_OK if ok is None else ok) and c2 - c1 >= CHANGE_MARGIN
+                and (want is None or list(best) == list(want)))
         if not fits or (seen and seen[-1] != best):
             seen.clear()
         if fits:
