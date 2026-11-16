@@ -51,6 +51,41 @@ def test_auto_done_in_simulator():
     shutil.rmtree(G.GAMES, ignore_errors=True)
 
 
+def test_film_demo_in_simulator():
+    """Film demo: the first roll is 3-1, the move 8/5 6/5 is known; it ends when the photos show
+    it played (no I'm done, nothing asked), and the robot answers."""
+    G.RECORD = False
+    G.AUTO_POLL_S = 0.2
+    G.GAMES = Path(__file__).resolve().parent / "_games_tmp_film"
+    g = G.Game({"mode": "robot_vs_human", "engine": "simple", "board": "sim", "dice": "camera",
+                "film": True}, log=lambda *a: None)
+    threading.Thread(target=g.run_forever, daemon=True).start()
+
+    def until(cond, t=60):
+        end = time.time() + t
+        while time.time() < end:
+            if cond():
+                return
+            time.sleep(0.02)
+        raise AssertionError(f"stuck: {g.phase} {g.asks} {g.prompt}")
+
+    g.post({"name": "new"})
+    until(lambda: "start" in g.asks)
+    g.post({"name": "start"})
+    until(lambda: g.phase == "human_move")
+    assert tuple(g.dice) == G.FILM_ROLL and G.FILM_MOVE in g.prompt
+    time.sleep(1.0)
+    assert not g.history, "nothing was played yet"
+    g.post({"name": "move", "value": G.FILM_MOVE})   # the simulated hand plays it, no I'm done
+    until(lambda: len(g.history) >= 2, t=60)         # ... and the robot answers
+    h = g.history[0]
+    assert h["who"] == "human" and "film demo" in h["note"], h
+    assert g.history[1]["who"] == "robot"
+    import shutil
+    shutil.rmtree(G.GAMES, ignore_errors=True)
+
+
 if __name__ == "__main__":
     test_auto_done_in_simulator()
+    test_film_demo_in_simulator()
     print("ok")

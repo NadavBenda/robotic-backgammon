@@ -165,8 +165,8 @@ details.card{padding:10px 14px}summary{cursor:pointer}
 <script>
 const OPTS={mode:["robot_vs_human","robot_vs_robot","watch","remote"],engine:["gnubg","simple","random"],
  dice:["digital","typed","camera"],human_move:["done_button","auto","robot_moves"],
- coach:[false,true],first:["human","robot","roll"],board:["auto","real","sim"]};
-const NAMES={mode:"Mode",engine:"Engine",dice:"Dice",human_move:"Your move",coach:"Coach",first:"Who starts",board:"Board"};
+ coach:[false,true],first:["human","robot","roll"],board:["auto","real","sim"],film:[false,true]};
+const NAMES={mode:"Mode",engine:"Engine",dice:"Dice",human_move:"Your move",coach:"Coach",first:"Who starts",board:"Board",film:"Film demo (you: 3-1, 8/5 6/5)"};
 const BTN={new:"New game",done:"I'm done",accept:"Accept",reread:"Read again",start:"Start",
  arrange:"Robot arranges from the trays",rearrange:"Robot arranges from the last game",go:"Yes, go",cancel:"Cancel",undo:"Undo last move",replay:"I put them back, play again",rolled:"Rolled",remote_roll:"Roll for them"};
 let S=null, built=false, lastPhoto=0, ED=null, PEND=null;
