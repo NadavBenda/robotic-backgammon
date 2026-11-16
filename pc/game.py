@@ -64,6 +64,15 @@ GAMES = Path(__file__).parent / "games"
 # three of them at 2.2-3.0 with the next one 2+ behind, so 2.0 -> 3.5, Nadav 15.11)
 CHANGE_OK = 3.5
 CHANGE_MARGIN = 1.0   # ... and the next legal move is at least this much worse (else: ask)
+# "Your move" = auto (Nadav 16.11, to film a game without looking at the laptop): while it is the
+# person's turn the camera takes a photo every AUTO_POLL_S; the move counts as done when AUTO_HITS
+# photos in a row show the same legal move, each fitting within AUTO_OK and clearly ahead of the
+# next. A hand over the glass or a half-played move does not fit, so it waits. Simulator, 39
+# moves: whole moves fit <= 1.2; 43 half-played ones >= 1.4, 5 of them <= 2.0 (the photos in a
+# row are what stops those: the hand is back over the glass by the next one). I'm done still works.
+AUTO_OK = 2.0
+AUTO_POLL_S = 1.0
+AUTO_HITS = 2
 TRAYS = ("off_robot", "off_human")   # not judged: a person may take checkers off the glass altogether
 ROBOT_FIT_WARN = 6.0  # the photo after a robot move fits it worse than this: a quiet note at the bottom
 NO_MOVE_S = 2.5       # how long "no legal move" stays on the page when the robot cannot play
@@ -74,7 +83,7 @@ DEFAULTS = {
     "mode": "robot_vs_human",    # robot_vs_human | robot_vs_robot | watch | remote
     "engine": "gnubg",           # gnubg | simple | random
     "dice": "digital",           # digital | typed | camera
-    "human_move": "done_button",  # done_button | robot_moves
+    "human_move": "done_button",  # done_button | auto (the camera sees when you finish) | robot_moves
     "coach": False,              # watch / human turns: show gnubg's choice
     "first": "human",            # human (always, Nadav 14.11) | robot | roll (opening roll)
     "board": "auto",             # auto (real, else simulator) | real | sim
@@ -789,10 +798,11 @@ class Game:
         self.drain()
         if not plays[0][0]:
             # nothing to play: the person still presses Done, so the turn never passes unseen (Nadav 15.11)
-            self.say(f"No legal move for {d[0]}-{d[1]}. Press I'm done", "human_move",
+            auto = self.s["human_move"] == "auto"   # auto: the turn passes by itself after a moment
+            self.say(f"No legal move for {d[0]}-{d[1]}." + (" Passing…" if auto else " Press I'm done"), "human_move",
                      ["done"] + (["dice_input"] if real else []))
-            a = self.wait("done", "dice")
-            if a["name"] == "dice":
+            a = self.wait("done", "dice", timeout=NO_MOVE_S + 1.5 if auto else None)
+            if a is not None and a["name"] == "dice":
                 return self.human_turn(side, dice_mod.parse(a.get("value", "")) or d)
             self.record(side, d, [], self.board, self.board, "no legal move")
             return
@@ -849,13 +859,21 @@ class Game:
             self.record(side, d, steps, board0, to_robot(nb), ("moved by the robot; " + note).rstrip("; "))
             return
 
+        auto = self.s["human_move"] == "auto"
         if self.is_sim:   # nobody's hand in the simulator: the page's picker moves "by hand"
-            self.say(f"{yours} turn (simulator): pick the move, then I'm done", "human_move", ["move_pick", "done"] + undo)
+            self.say(f"{yours} turn (simulator): pick the move" + ("" if auto else ", then I'm done"),
+                     "human_move", ["move_pick", "done"] + undo)
         else:
-            self.say(f"{yours} turn" + (": take the dice off the glass and play" if self.s["dice"] == "camera" else ""),
+            self.say(f"{yours} turn" + (": take the dice off the glass and play" if self.s["dice"] == "camera" else
+                                        (": play, the camera sees when you finish" if auto else "")),
                      "human_move", ["done"] + (["dice_input"] if real else []) + undo)
+        seen = []   # auto: the best legal move of each photo in a row that fitted well
         while True:
-            a = self.wait("done", "move", "dice", "undo")
+            a = self.wait("done", "move", "dice", "undo", timeout=AUTO_POLL_S if auto else None)
+            if a is None:   # auto: nothing pressed, look whether the move is finished
+                if self.auto_done(before, cands, seen):
+                    break
+                continue
             if a["name"] == "undo":
                 if undo:
                     return self.human_turn(side, self.undo(), redo=True)
@@ -873,6 +891,20 @@ class Game:
         self.say("Reading the move…", "reading")
         self.look()
         self.read_by_change(before, cands, plays, d, side, to_robot)
+
+    def auto_done(self, before, cands, seen):
+        """One photo while the person plays (Your move = auto): True when the last AUTO_HITS photos
+        all show the same legal move, fitting within AUTO_OK and at least CHANGE_MARGIN ahead."""
+        img = self.photo_img()
+        ranked = vision.rank_by_change(before, img, self.c, self.L, self.board, cands, TRAYS)
+        c1, best = ranked[0]
+        c2 = ranked[1][0] if len(ranked) > 1 else 99.0
+        fits = c1 <= AUTO_OK and c2 - c1 >= CHANGE_MARGIN
+        if not fits or (seen and seen[-1] != best):
+            seen.clear()
+        if fits:
+            seen.append(list(best))
+        return len(seen) >= AUTO_HITS
 
     def read_by_change(self, before, cands, plays, d, side, to_robot):
         """The "depressive" reading (Nadav 14.11): the new board is always one of the legal
