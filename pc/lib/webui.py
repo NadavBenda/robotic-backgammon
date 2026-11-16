@@ -164,7 +164,7 @@ details.card{padding:10px 14px}summary{cursor:pointer}
 </section></main><div id="confetti"></div>
 <script>
 const OPTS={mode:["robot_vs_human","robot_vs_robot","watch","remote"],engine:["gnubg","simple","random"],
- dice:["digital","typed","camera"],human_move:["done_button","robot_moves"],
+ dice:["digital","typed","camera"],human_move:["done_button","auto","robot_moves"],
  coach:[false,true],first:["human","robot","roll"],board:["auto","real","sim"]};
 const NAMES={mode:"Mode",engine:"Engine",dice:"Dice",human_move:"Your move",coach:"Coach",first:"Who starts",board:"Board"};
 const BTN={new:"New game",done:"I'm done",accept:"Accept",reread:"Read again",start:"Start",
