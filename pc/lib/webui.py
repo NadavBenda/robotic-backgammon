@@ -131,7 +131,7 @@ details.card{padding:10px 14px}summary{cursor:pointer}
  </div>
  <div class="side">
   <button class="sec small" id="newbtn" hidden>New game</button>
-  <div><button class="sec small tog" id="swapbtn" title="Swap who plays which colour (no checker moves). Before Start or after a game" aria-label="Swap who plays which colour">⇄</button>
+  <div><button class="sec small tog" id="swapbtn" title="Swap the colours: white &lt;-&gt; black, to match the board" aria-label="Swap the colours">⇄</button>
   <button class="sec small tog" id="sndbtn" title="Sounds: dice, your turn, the end of the game"></button>
   <button class="sec small tog" id="cleanbtn" title="Video mode: only the game, nothing else on the page"></button></div>
  </div>
@@ -322,7 +322,7 @@ function paintPlayers(s){for(const side of ["robot","human"]){const p=s.players[
   document.getElementById("nm-"+side).textContent=p.name;document.getElementById("pl-"+side).style.color=isWhite(side)?"#fbfaf4":"#0c0c0c";
   document.getElementById("st-"+side).textContent=(isWhite(side)?"white":"black")+(s.off[i]?" · "+s.off[i]+" off":"");
   document.getElementById("pl-"+side).classList.toggle("on",!s.winner&&s.turn===side||!!s.winner&&s.winner.who===side)}}
-document.getElementById("swapbtn").onclick=()=>{if(!S||!S.can_swap)return;post({name:"swap_colours"});
+document.getElementById("swapbtn").onclick=()=>{if(!S)return;S.robot_white=!S.robot_white;post({name:"swap_colours"});
  paintPlayers(S);if(ED)drawEdit(S);else drawBoard(S)};
 // -- remote mode: the far player's secret link, and whether their phone is on --
 function paintRemote(s){const box=document.getElementById("remote"),r=s.remote;box.hidden=!r;if(!r)return;

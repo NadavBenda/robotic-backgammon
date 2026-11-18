@@ -60,8 +60,8 @@ class Layout:
     affine: list = field(default=None)  # 2x3, from teach_layout.py; replaces flip_x/flip_y
     keepout: list = field(default_factory=list)  # [[x0, y0, x1, y1]] the magnet must not enter
     dice_zone: tuple = (172.0, -44.0, 238.0, -14.0)  # picture frame; beyond the near trays
-    mirror: bool = False           # True: the robot plays the other side's checkers (the page's swap
-                                   # button, Nadav 15.11): every place left <-> right; not saved
+    mirror: bool = False           # True: every place left <-> right (the robot plays the other side's
+                                   # checkers); not saved. Unused since 18.11: the swap button only swaps colours
 
     # -- file -------------------------------------------------------------
     @classmethod

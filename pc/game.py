@@ -100,23 +100,12 @@ class Restart(Exception):
     pass
 
 
-SWAP_PHASES = ("idle", "setup", "over", "error")   # when the page's swap button works
 TURN_CCW = True   # the page's drawing and photo turned 90 degrees counter-clockwise (Nadav 15.11:
                   # the laptop stands beside the box); False = as before
 
 
 def mode_is_remote(s):
     return s.get("mode") == "remote"
-
-
-def mirrored(b):
-    """A board (robot's side) written from the other side, for the same checkers on the glass:
-    the robot's point p is the other side's 25 - p, and the bars swap."""
-    out = [0] * 26
-    out[0], out[25] = -b[25], -b[0]
-    for p in range(1, 25):
-        out[p] = -b[25 - p]
-    return out
 
 
 class _Upside:
@@ -135,6 +124,7 @@ class Game:
         self.s = dict(DEFAULTS, **{k: v for k, v in (settings or {}).items() if k in DEFAULTS})
         self.inbox = queue.Queue()
         self.robot_white = False    # whose checkers are the white ones (found at the opening; the page's swap button turns it)
+        self.colours_by_hand = False  # the swap button was pressed: keep that, do not look again at Start
         self.busy = False           # the game is working (not waiting for a click): the page shows it
         self.lock = threading.Lock()
         self.log_fn = log
@@ -211,7 +201,7 @@ class Game:
                     "bar_y": round(self.L._row_y(6), 1), "frame": self.frame(), "turn_ccw": TURN_CCW,
                     "paths": [[[round(x, 1), round(y, 1)] for x, y in p] for p in self.paths],
                     "players": self.players(), "robot_white": self.robot_white, "edge": self.edge(),
-                    "can_swap": not self.busy and self.phase in SWAP_PHASES,
+                    "can_swap": True,
                     "cooling": self.cooling_s,
                     "remote": self.remote.status() if self.remote and mode_is_remote(self.s) else None}
 
@@ -335,25 +325,14 @@ class Game:
         self.inbox.put(action)
 
     def swap_sides(self):
-        """The robot takes the other colour's checkers and the person the robot's (Nadav 15.11):
-        no checker moves, only who plays them. Every place turns left <-> right (Layout.mirror)
-        and the known board is written from the robot's new side. Only between games or while
-        the opening waits for Start, never during a move."""
+        """The page's swap button (Nadav 18.11): white <-> black on the page and on the photo,
+        to match the board as it is seen. No checker moves, no number changes, nothing is
+        played differently. The choice stays: the colour check at Start no longer overrides it."""
         with self.lock:
-            if self.busy or self.phase not in SWAP_PHASES:
-                return
-            self.L.mirror = not self.L.mirror
             self.robot_white = not self.robot_white
-            self.board = mirrored(self.board)
-            if self.last_board:
-                self.last_board = mirrored(self.last_board)
-        self.log_fn(f"swapped: the robot plays {'white' if self.robot_white else 'black'}")
-        if self.is_sim:   # the simulator's checkers know their owner
-            for c in self.b.ck:
-                c[2] = "human" if c[2] == "robot" else "robot"
-        if self.ex is not None:
-            self.ex.set_from_board(self.board)
-        self.mark()
+            self.colours_by_hand = True
+        self.log_fn(f"colours swapped: the robot's checkers are {'white' if self.robot_white else 'black'}")
+        self.redraw()
 
     def cooling(self, s):
         self.cooling_s = int(round(s))
@@ -1096,7 +1075,7 @@ class Game:
         """Which side has the white checkers and which the black, from the brightness of the
         opening photo at the places the opening puts them (no detector). The page draws both
         the board and the circles on the photo in those colours; its swap button turns them."""
-        if self.is_sim or getattr(self, "last_img", None) is None:
+        if self.is_sim or getattr(self, "last_img", None) is None or self.colours_by_hand:
             return
         try:
             col = vision.side_colours(self.last_img, self.c, self.L, rules.OPENING)
