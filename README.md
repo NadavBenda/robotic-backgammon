@@ -1,26 +1,112 @@
-# 🎲 AI-Driven Robotic Backgammon
-
-Welcome to the Robotic Backgammon project! This system combines custom mechanics, electronics, and computer vision to create an autonomous, smart game board.
-
-## 🎯 Overview
-The system relies on a hidden **CoreXY** motion mechanism located underneath the game board. The mechanism drives an electromagnet, which smoothly drags game pieces (equipped with an internal iron/magnet sandwich for absolute symmetry) across a 3mm transparent/frosted perspex board. Simultaneously, a camera and an AI vision model track player moves in real-time, allowing the software logic to react and move robotic pieces accordingly.
-
-### 🌐 3D Interactive Model
-[View the 3D model in your browser](https://a360.co/4yloJTi)
+<h1 align="center">Robotic Backgammon</h1>
 
 <p align="center">
-  <img src="robot_backgammon_preview.png" width="700" alt="Robotic Backgammon System Overview">
-  <br>
-  <em>System overview: Hidden CoreXY motion mechanism beneath the game board</em>
+  <b>A real backgammon board that plays against you, or lets someone play from a phone anywhere in the world.<br>
+  A robot hidden under the glass moves the checkers.</b>
 </p>
 
-## 🛠️ Architecture & Technologies
-* **Mechanics & Framing:** CoreXY motion system, MGN12H linear rails, and high-strength GT2 timing belts. Custom 3D printed parts (game pieces, brackets, and CoreXY corners) are printed in PLA/PETG. The outer enclosure is built from wood.
-* **Electronics & Actuation:** NEMA 17 stepper motors, silent TMC2209 stepper drivers, a 12V power supply, and a P25/20 electromagnet controlled via an external MOSFET module.
-* **Communication & Firmware:** ESP32-S3 microcontroller (powered via an external USB-C panel mount), operating in Wi-Fi Access Point mode and supporting Over-The-Air (OTA) firmware updates.
-* **Vision & AI:** An external PC or Jetson Nano running a YOLO vision model to detect piece positions, paired with a game logic engine.
+<p align="center">
+  <img src="docs/media/hero-remote-move.gif" width="860" alt="A move tapped on a phone is played by the robot on the real board">
+</p>
 
-## 🗺️ Roadmap & Work Plan (DAG)
+<p align="center">
+  ESP32-S3 &nbsp;·&nbsp; CoreXY &nbsp;·&nbsp; 12 V electromagnet &nbsp;·&nbsp; camera through a mirror &nbsp;·&nbsp; Python &nbsp;·&nbsp; GNU Backgammon
+</p>
+
+---
+
+## How it moves
+
+A cart on two rails runs under 4 mm tempered glass. It carries an electromagnet that grabs a checker from below and drags it to its place, along a path that keeps clear of every other checker.
+
+<table>
+  <tr>
+    <td width="33%" align="center"><img src="docs/media/magnet-under-glass.gif" alt="The electromagnet drags a checker under the glass"></td>
+    <td width="33%" align="center"><img src="docs/media/photo-magnet-carriage.jpg" alt="The magnet cart on the CoreXY rails"></td>
+    <td width="33%" align="center"><img src="docs/media/photo-checkers.jpg" alt="3D-printed checkers"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub><b>Under the glass.</b> The magnet pulls the checker along.</sub></td>
+    <td align="center"><sub><b>The cart.</b> CoreXY, two NEMA 17 motors, MGN12 rails, GT2 belts.</sub></td>
+    <td align="center"><sub><b>The checkers.</b> 3D-printed, 26 mm, with a steel bottom.</sub></td>
+  </tr>
+</table>
+
+## How it sees
+
+Most robot boards hang a camera above the table. This one keeps it inside the box: the camera sits at the centre of the back wall and looks into a mirror, up through the glass. The software straightens the view into a top-down image of the board.
+
+<p align="center">
+  <img src="docs/media/cad-camera-mirror.jpg" width="760" alt="Section of the box: camera, mirror and glass">
+</p>
+<p align="center">
+  <img src="docs/media/camera-view.jpg" width="860" alt="The raw camera image and the straightened top view">
+</p>
+
+## It sets itself up
+
+From two rows of checkers in the trays, the robot lays out the opening position on its own (sped up).
+
+<p align="center">
+  <img src="docs/media/auto-setup.gif" width="440" alt="The robot sets up the opening position by itself">
+</p>
+
+## The electronics
+
+<p align="center">
+  <img src="docs/media/wiring-overview.png" width="900" alt="Wiring overview">
+</p>
+
+An ESP32-S3 drives two TMC2209 stepper drivers on a CNC Shield and switches the magnet through an opto-isolated MOSFET module. The PC talks to it over USB serial. The lid, with the controller and camera, unplugs from the box through an RJ45 and a banana connector. Every pin and wire is in the [detailed wiring diagram](electronics/wiring_diagram.png) and [wiring notes](electronics/wiring.md).
+
+## Designed in Fusion 360
+
+<table>
+  <tr>
+    <td width="45%" align="center"><img src="docs/media/cad-assembly.gif" alt="The Fusion 360 model assembling"></td>
+    <td>
+      Every part was modelled before it was built: the box, the CoreXY frame, the cart, the mirror and the camera mount.
+      <br><br>
+      <a href="https://a360.co/4yloJTi"><b>Open the 3D model in your browser</b></a>
+    </td>
+  </tr>
+</table>
+
+## Ways to play
+
+* **Against the computer.** GNU Backgammon picks the robot's moves, and the robot plays them on the board.
+* **From far away.** A second player gets a private link and plays from a phone; the robot moves their checkers at home.
+* **Two people at the board,** with the robot keeping track.
+* **Robot against robot,** as a demo.
+
+You play your own checkers by hand. The game runs in the browser on the PC (`pc/game.py`), with digital dice, an undo button and an advantage bar, and it also runs as a simulator with no hardware attached.
+
+## Under the hood
+
+| Part | What it is |
+|---|---|
+| Mechanics | CoreXY, MGN12 linear rails, GT2 belts, 2 × NEMA 17, wooden box, 4 mm tempered glass |
+| Actuator | P30/25 12 V electromagnet, AOD4184 MOSFET module, flyback diode, heat budget enforced by the firmware |
+| Controller | Freenove ESP32-S3 WROOM CAM, CNC Shield V3, 2 × TMC2209, 12 V 8 A supply |
+| Link | USB serial at 921600 baud; one command per line in millimetres, answered `DONE` or `ERR` |
+| Vision | OV3660 wide-angle camera looking into a mirror; calibrated by the robot itself, which carries a checker over a grid and photographs it |
+| Software | Python on the PC: game logic, browser UI, GNU Backgammon engine, A* drag paths that keep 30 mm from other checkers, remote play over a secure tunnel |
+
+## Repository
+
+| Folder | Contents |
+|---|---|
+| [`pc/`](pc) | Everything that runs on the PC: the game, calibration and setup tools ([details](pc/README.md)) |
+| [`firmware/`](firmware) | ESP32-S3 firmware: motion, homing, magnet, camera ([details](firmware/README.md)) |
+| [`electronics/`](electronics) | Wiring diagram, wiring notes and wiring table |
+
+<details>
+<summary><b>The original build plan</b></summary>
+
+<p align="center">
+  <img src="robot_backgammon_preview.png" width="600" alt="Early system overview">
+  <br><em>An early render: the CoreXY mechanism beneath the board</em>
+</p>
 
 ```mermaid
 graph TD
@@ -105,3 +191,6 @@ graph TD
     style P4 fill:#f9f9f9,stroke:#ccc,stroke-width:3px,rx:10,ry:10
     style P5 fill:#f9f9f9,stroke:#ccc,stroke-width:3px,rx:10,ry:10
     style P6 fill:#f9f9f9,stroke:#ccc,stroke-width:3px,rx:10,ry:10
+```
+
+</details>
